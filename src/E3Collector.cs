@@ -18,6 +18,8 @@ public sealed class E3App
     public double Network { get; set; }
     public double Npu { get; set; }
     public double Other { get; set; }
+    /// <summary>Most interactive state seen this minute: Focus, Visible, Minimized or Background.</summary>
+    public string State { get; set; } = "Background";
     public double Total => Cpu + Gpu + Display + Disk + Network + Npu + Other;
 }
 
@@ -88,12 +90,21 @@ public static class E3Collector
             Log("session enabled");
             WriteSnapshot(new E3Snapshot { Status = "collecting", Message = "waiting for the first batch", Updated = DateTime.Now });
 
+            // Started by the tray app: follow that process. Started by the scheduled task: stay while any
+            // WattBar instance exists, with a grace period so a quick restart of the tray app does not end us.
+            DateTime? noTraySince = null;
             while (true)
             {
                 Thread.Sleep(500);
                 if (pump.IsCompleted) { Log("event pump ended"); break; }
                 if (File.Exists(StopPath)) { Log("stop requested"); break; }
                 if (parentPid > 0 && !ProcessAlive(parentPid)) { Log("parent gone"); break; }
+                if (parentPid == 0)
+                {
+                    if (TrayRunning()) noTraySince = null;
+                    else if (noTraySince is null) noTraySince = DateTime.Now;
+                    else if (DateTime.Now - noTraySince > TimeSpan.FromSeconds(10)) { Log("no WattBar instance left"); break; }
+                }
                 FlushIfIdle();
             }
 
@@ -154,7 +165,21 @@ public static class E3Collector
             app.Network += Num("NetworkEnergy");
             app.Npu += Num("NpuEnergy");
             app.Other += Num("OtherEnergy") + Num("MbbEnergy") + Num("LossEnergy");
+
+            int si = e.PayloadIndex("InteractivityState");
+            string state = si >= 0 ? (e.PayloadString(si) ?? "") : "";
+            if (Rank(state) > Rank(app.State)) app.State = Canonical(state);
         }
+    }
+
+    private static int Rank(string state) => Canonical(state) switch { "Focus" => 3, "Visible" => 2, "Minimized" => 1, _ => 0 };
+
+    private static string Canonical(string state)
+    {
+        if (state.Contains("Focus", StringComparison.OrdinalIgnoreCase)) return "Focus";
+        if (state.Contains("Visible", StringComparison.OrdinalIgnoreCase)) return "Visible";
+        if (state.Contains("Minimized", StringComparison.OrdinalIgnoreCase)) return "Minimized";
+        return "Background";
     }
 
     /// <summary>A batch arrives as a burst; two quiet seconds after the last event it is complete.</summary>
@@ -220,6 +245,12 @@ public static class E3Collector
     }
 
     public static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    private static bool TrayRunning()
+    {
+        try { return Process.GetProcessesByName("WattBar").Any(p => p.Id != Environment.ProcessId); }
+        catch { return true; }
+    }
 
     private static bool ProcessAlive(int pid)
     {

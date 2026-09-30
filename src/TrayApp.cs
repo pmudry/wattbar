@@ -86,8 +86,13 @@ public sealed class TrayApp : ApplicationContext
         var spark = _package.Available
             ? _history.Bins(SparkSpan, bins, x => x.PackageWatts)
             : _history.Bins(SparkSpan, bins);
+        // On AC with an idle battery the gauge reads zero; the CPU package is the only measured figure, so show it.
+        bool light = Theme.TaskbarIsLight();
+        bool packageMode = sample.State == PowerState.Idle && sample.PackageWatts is double;
         var old = _icon.Icon;
-        _icon.Icon = TrayIconRenderer.Render(size, sample.Watts, sample.State, spark, Theme.TaskbarIsLight());
+        _icon.Icon = packageMode
+            ? TrayIconRenderer.Render(size, sample.PackageWatts!.Value, PowerState.Discharging, spark, light, digitColor: Theme.Package(!light))
+            : TrayIconRenderer.Render(size, sample.Watts, sample.State, spark, light);
         if (old is not null && old != SystemIcons.Application) old.Dispose();
 
         _icon.Text = Truncate(Tooltip(sample), 127);
@@ -109,20 +114,24 @@ public sealed class TrayApp : ApplicationContext
             _ => "unknown",
         };
         string pct = s.Percent is double p ? $" \u00B7 {p:0} %" : "";
-        string pkg = s.PackageWatts is double w ? $"\npackage {w:0.0} W" : "";
+        string pkg = s.PackageWatts is double w ? $"\nCPU package {w:0.0} W" : "";
         string ctx = _context is not null ? $"\n{_context.Describe()}" : "";
+        if (s.State == PowerState.Idle && s.PackageWatts is double pw)
+            return $"CPU package {pw:0.0} W (on AC, battery idle){pct}{ctx}";
         return $"{Math.Abs(s.Watts):0.0} W {state}{pct}{pkg}{ctx}";
     }
 
     private void ToggleFlyout()
     {
-        if (_flyout.Visible) _flyout.Hide();
-        else _flyout.ShowAtTray();
+        if (_flyout.Visible) { _flyout.Hide(); return; }
+        // The mouse-down on the tray icon already deactivated and hid the flyout; that click means "close".
+        if (DateTime.Now - _flyout.HiddenAt < TimeSpan.FromMilliseconds(500)) return;
+        _flyout.ShowAtTray();
     }
 
     private void ShowOffenders()
     {
-        _offenders ??= new OffendersForm();
+        _offenders ??= new OffendersForm(() => _history.PackageAverage(TimeSpan.FromMinutes(1)));
         _offenders.Show();
         _offenders.WindowState = FormWindowState.Normal;
         _offenders.Activate();

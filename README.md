@@ -23,7 +23,7 @@ A tiny Windows 11 tray app that shows how fast your laptop battery is draining, 
 
 ## Features
 
-- **Watts in the tray** — the icon is redrawn every second with the battery gauge reading; below 10 W it keeps one decimal
+- **Watts in the tray** — the icon is redrawn every second with the battery gauge reading; below 10 W it keeps one decimal. On AC with an idle battery it shows the CPU package power instead, in the package colour
 - **Sparkline in the icon** — the last two minutes of CPU package power, the only instantaneous signal, binned to the icon width
 - **Chart flyout** — click the icon for a plot of the last 1, 5, 10, 30 or 60 minutes with the battery gauge and the package power as two series; click the chart to cycle the window
 - **Honest averages** — for windows with enough continuous discharge, the average and the time left come from the drop in remaining capacity, not from the mean of gauge samples
@@ -56,7 +56,7 @@ Right-click the icon for **Show chart**, **Who is using it…**, **Start with Wi
 
 **Context.** The active scheme comes from `PowerGetActiveScheme`, the Windows 11 overlay from the `PowerSchemes` registry key, and brightness from the WMI class `WmiMonitorBrightness`. All three are read without elevation every five seconds.
 
-**Per-process estimates.** Task Manager's "Power usage" column comes from the Energy Estimation Engine, which also publishes its per-minute estimates as the ETW provider `Microsoft-Windows-Energy-Estimation-Engine`. Reading it needs an elevated process, so the "Who is using it" window starts a second copy of WattBar through a UAC prompt. That collector merges each batch per process and writes `%ProgramData%\WattBar\e3.json`, which the tray app displays; it exits with the tray app or on demand. The unit of those estimates is undocumented, so the window shows shares, not watts, and screen energy is always charged to the foreground window.
+**Per-process estimates.** Task Manager's "Power usage" column comes from the Energy Estimation Engine, which also publishes its per-minute estimates as the ETW provider `Microsoft-Windows-Energy-Estimation-Engine`. Reading it needs an elevated process, so the "Who is using it" window starts a second copy of WattBar as a collector, and explains why. You choose how it may start: with a UAC prompt each time, through a scheduled task registered once with consent and started silently afterwards, or not at all. The collector merges each batch per process and writes `%ProgramData%\WattBar\e3.json`, which the tray app displays; it exits with the tray app or on demand. The unit of those estimates is undocumented, so the window shows shares, plus an approximate CPU wattage obtained by spreading the measured package power over processes by their CPU share. Each row carries the process state for the minute (focus, visible, minimized, background); a background or minimized process above 10 % of CPU share is highlighted in magenta as a likely offender. Screen energy is always charged to the foreground window.
 
 The reasoning behind these choices is in [`docs/ENERGY-FINDINGS.md`](./docs/ENERGY-FINDINGS.md).
 

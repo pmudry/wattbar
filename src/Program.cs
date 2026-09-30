@@ -16,6 +16,10 @@ static class Program
             Environment.Exit(E3Collector.Run(pid));
         }
 
+        int inst = Array.IndexOf(args, "--install-task");
+        if (inst >= 0) Environment.Exit(E3Task.Install(inst + 1 < args.Length ? args[inst + 1] : System.Security.Principal.WindowsIdentity.GetCurrent().Name));
+        if (args.Contains("--uninstall-task")) Environment.Exit(E3Task.Uninstall());
+
         bool show = args.Contains("--show");
         bool who = args.Contains("--who");
 

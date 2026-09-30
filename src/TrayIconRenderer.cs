@@ -10,7 +10,7 @@ public static class TrayIconRenderer
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr hIcon);
 
-    public static Icon Render(int size, double watts, PowerState state, double[] spark, bool lightTaskbar, string? label = null)
+    public static Icon Render(int size, double watts, PowerState state, double[] spark, bool lightTaskbar, string? label = null, Color? digitColor = null)
     {
         using var bmp = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bmp))
@@ -20,7 +20,7 @@ public static class TrayIconRenderer
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
             DrawSparkline(g, size, spark, Theme.Accent(state, !lightTaskbar));
-            DrawNumber(g, size, label ?? Label(watts, state), lightTaskbar);
+            DrawNumber(g, size, label ?? Label(watts, state), lightTaskbar, digitColor);
         }
 
         IntPtr h = bmp.GetHicon();
@@ -93,7 +93,7 @@ public static class TrayIconRenderer
         sheet.Save(path);
     }
 
-    private static void DrawNumber(Graphics g, int size, string text, bool lightTaskbar)
+    private static void DrawNumber(Graphics g, int size, string text, bool lightTaskbar, Color? digitColor)
     {
         using var path = new GraphicsPath();
         using var family = DigitFamily();
@@ -120,7 +120,7 @@ public static class TrayIconRenderer
         path.Transform(m);
 
         // Outline in the opposite tone so the digits stay legible over any taskbar colour.
-        Color fill = lightTaskbar ? Color.Black : Color.White;
+        Color fill = digitColor ?? (lightTaskbar ? Color.Black : Color.White);
         Color outline = lightTaskbar ? Color.FromArgb(200, Color.White) : Color.FromArgb(200, Color.Black);
         using var pen = new Pen(outline, Math.Max(1.5f, size / 12f)) { LineJoin = LineJoin.Round };
         using var brush = new SolidBrush(fill);

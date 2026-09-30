@@ -80,10 +80,14 @@ public sealed class FlyoutForm : Form
         Invalidate();
     }
 
+    /// <summary>When the flyout was last hidden by losing focus; lets a tray click that caused it act as "close".</summary>
+    public DateTime HiddenAt { get; private set; } = DateTime.MinValue;
+
     protected override void OnDeactivate(EventArgs e)
     {
         base.OnDeactivate(e);
         if (_tipShown) { _tip.Hide(this); _tipShown = false; }
+        HiddenAt = DateTime.Now;
         Hide();
     }
 
@@ -169,8 +173,9 @@ public sealed class FlyoutForm : Form
 
         // Big number + status
         float y = pad + 20 * s;
-        string big = last is null ? "--" : $"{Math.Abs(last.Value.Watts):0.0} W";
-        g.DrawString(big, fontBig, brushFg, pad - 2 * s, y);
+        bool packageMode = last is { State: PowerState.Idle, PackageWatts: not null };
+        string big = last is null ? "--" : packageMode ? $"{last!.Value.PackageWatts!.Value:0.0} W" : $"{Math.Abs(last.Value.Watts):0.0} W";
+        g.DrawString(big, fontBig, packageMode ? brushPackage : brushFg, pad - 2 * s, y);
         var bigSize = g.MeasureString(big, fontBig);
         g.DrawString(StatusLine(last), fontSmall, brushMuted, pad + bigSize.Width + 4 * s, y + bigSize.Height - 22 * s);
 
@@ -178,7 +183,7 @@ public sealed class FlyoutForm : Form
         float rowY = y + bigSize.Height + 2 * s;
         var segments = new List<(string text, Brush brush)>();
         _packageHot = RectangleF.Empty;
-        if (last?.PackageWatts is double pw)
+        if (last?.PackageWatts is double pw && !packageMode)
         {
             segments.Add(("package ", brushMuted));
             segments.Add(($"{pw:0.0} W", brushPackage));
@@ -216,11 +221,20 @@ public sealed class FlyoutForm : Form
         if (samples.Count > 0)
         {
             float footY = Height - pad - 16 * s;
-            double? capAvg = _history.CapacityAverage(span);
-            double avg = capAvg ?? samples.Average(x => Math.Abs(x.Watts));
-            double peak = samples.Max(x => Math.Abs(x.Watts));
-            double min = samples.Min(x => Math.Abs(x.Watts));
-            string stats = $"avg {avg:0.0} W{(capAvg is null ? "*" : "")}   \u00B7   peak {peak:0.0} W   \u00B7   min {min:0.0} W";
+            string stats;
+            var pkgSamples = packageMode ? samples.Where(x => x.PackageWatts is not null).Select(x => x.PackageWatts!.Value).ToList() : null;
+            if (pkgSamples is { Count: > 0 })
+            {
+                stats = $"package avg {pkgSamples.Average():0.0} W   \u00B7   peak {pkgSamples.Max():0.0} W   \u00B7   min {pkgSamples.Min():0.0} W";
+            }
+            else
+            {
+                double? capAvg = _history.CapacityAverage(span);
+                double avg = capAvg ?? samples.Average(x => Math.Abs(x.Watts));
+                double peak = samples.Max(x => Math.Abs(x.Watts));
+                double min = samples.Min(x => Math.Abs(x.Watts));
+                stats = $"avg {avg:0.0} W{(capAvg is null ? "*" : "")}   \u00B7   peak {peak:0.0} W   \u00B7   min {min:0.0} W";
+            }
             g.DrawString(stats, fontSmall, brushMuted, pad, footY);
         }
     }
@@ -251,7 +265,10 @@ public sealed class FlyoutForm : Form
     private static void DrawChart(Graphics g, RectangleF r, List<Sample> samples, TimeSpan span, Color accent, Color package, Color grid, Color muted, Font font, float s)
     {
         // Axis follows the battery series; package bursts are clipped at the top so they cannot squash it.
-        double maxW = samples.Count > 0 ? samples.Max(x => Math.Abs(x.Watts)) : 10;
+        // On AC the battery series sits at zero, so the package series takes over the scale.
+        double batteryMax = samples.Count > 0 ? samples.Max(x => Math.Abs(x.Watts)) : 0;
+        double packageMax = samples.Count > 0 ? samples.Max(x => x.PackageWatts ?? 0) : 0;
+        double maxW = batteryMax >= 1 ? batteryMax : Math.Max(Math.Max(batteryMax, packageMax), samples.Count > 0 ? 0 : 10);
         double step = NiceStep(maxW);
         double yMax = Math.Max(step, Math.Ceiling(maxW / step) * step);
 
@@ -317,6 +334,7 @@ public sealed class FlyoutForm : Form
             {
                 PowerState.Discharging => "discharging",
                 PowerState.Charging => "charging",
+                PowerState.Idle when l.PackageWatts is not null => "CPU package, on AC",
                 PowerState.Idle => "on AC",
                 _ => "unknown",
             }
