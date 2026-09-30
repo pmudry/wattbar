@@ -13,6 +13,13 @@
 A tiny Windows 11 tray app that shows how fast your laptop battery is draining, in watts. The tray icon carries the live number with a two-minute sparkline behind it; clicking it opens a flyout with a chart of the last 1 to 60 minutes (5 by default), the CPU package power next to the battery figure, the active power scheme and brightness, and an estimate of the time left. Written in C# on [.NET 10](https://dotnet.microsoft.com/) with WinForms and GDI+, and it ships as a single exe.
 
 
+## Why
+
+CPU load is not battery drain. Task Manager will happily show 2 % CPU while the laptop empties in three hours, because most of what costs energy never shows up as CPU time: the display backlight, a power scheme silently switched to High performance, a process holding the system timer at 1 ms so the CPU package can never go to deep idle, the GPU compositing a large high-refresh screen, Wi-Fi and SSD kept awake by a plan setting. This tool came out of exactly that hunt: an idle drain of 9 to 15 W on a ThinkPad that ended at 2 to 3 W, with none of the culprits visible in the usual places.
+
+So WattBar shows watts, the unit the battery actually cares about, and shows it from two angles that disagree in useful ways. The battery gauge is the truth over minutes: a slow rolling value with the whole machine in it. The CPU package power is instantaneous and reacts within a second, so it tells you whether a change you just made did anything. The gap between the two is the display and the rest of the machine. And because "which process" is the next question, the per-process view surfaces Windows' own energy accounting, the numbers behind Task Manager's Power usage column, ranked so that a heavy process running in the background stands out.
+
+
 ## Preview
 
 | Tray icon (5× zoom) | Flyout |
