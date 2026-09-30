@@ -33,7 +33,7 @@ public sealed record PowerContext(string Scheme, bool SchemeIsBalanced, string? 
 
     /// <summary>"Balanced · best efficiency", "High performance", ...</summary>
     public string Describe() =>
-        SchemeIsBalanced && Overlay is string o && o != "balanced" ? $"{Scheme} \u00B7 {o}" : Scheme;
+        SchemeIsBalanced && Overlay is string o && o != "balanced" ? $"{L10n.T(Scheme)} \u00B7 {L10n.T(o)}" : L10n.T(Scheme);
 
     private static (string name, bool balanced) ReadScheme()
     {

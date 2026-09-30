@@ -1,6 +1,8 @@
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 
+using static WattBar.L10n;
+
 namespace WattBar;
 
 /// <summary>Borderless popup anchored above the tray that plots recent battery and package power.</summary>
@@ -136,17 +138,21 @@ public sealed class FlyoutForm : Form
         Invalidate();
     }
 
+    private ContextMenuStrip? _windowMenu;
+
     private void ShowWindowMenu(Point at)
     {
-        var menu = new ContextMenuStrip();
+        // Never dispose a menu from its own events: WinForms still touches it afterwards (keyboard handling).
+        // The previous instance is released here, long after it closed.
+        _windowMenu?.Dispose();
+        var menu = _windowMenu = new ContextMenuStrip();
         for (int i = 0; i < Windows.Length; i++)
         {
             int index = i;
-            var item = new ToolStripMenuItem($"last {(int)Windows[i].TotalMinutes} min") { Checked = i == _windowIndex };
+            var item = new ToolStripMenuItem(T("last {0} min", (int)Windows[i].TotalMinutes)) { Checked = i == _windowIndex };
             item.Click += (_, _) => { _windowIndex = index; Invalidate(); };
             menu.Items.Add(item);
         }
-        menu.Closed += (_, _) => menu.Dispose();
         menu.Show(this, at);
     }
 
@@ -189,21 +195,21 @@ public sealed class FlyoutForm : Form
         _hot.Clear();
 
         // Header: title left; "who is using it", gear and the time window on the right
-        g.DrawString("Battery power", fontSmall, brushMuted, pad, pad);
-        string windowLabel = $"last {(int)span.TotalMinutes} min  \u25BE";
+        g.DrawString(T("Battery power"), fontSmall, brushMuted, pad, pad);
+        string windowLabel = T("last {0} min", (int)span.TotalMinutes) + "  \u25BE";
         var wl = g.MeasureString(windowLabel, fontSmall);
         float hx = Width - pad - wl.Width;
         g.DrawString(windowLabel, fontSmall, brushMuted, hx, pad);
         float labelX = hx, labelBottom = pad + wl.Height;
-        _hot.Add((new RectangleF(hx, pad, wl.Width, wl.Height), "Time window", () => ShowWindowMenu(new Point((int)labelX, (int)labelBottom))));
+        _hot.Add((new RectangleF(hx, pad, wl.Width, wl.Height), T("Time window"), () => ShowWindowMenu(new Point((int)labelX, (int)labelBottom))));
 
         float gearW = DrawGlyphButton(g, "\uE713", hx - 10 * s, pad, wl.Height, muted, s);
         hx -= 10 * s + gearW;
-        _hot.Add((new RectangleF(hx, pad, gearW, wl.Height), "Settings: theme, start with Windows, about", () => _showSettings(this, new Point((int)hx, (int)(pad + wl.Height)))));
+        _hot.Add((new RectangleF(hx, pad, gearW, wl.Height), T("Settings: theme, language, start with Windows, about"), () => _showSettings(this, new Point((int)hx, (int)(pad + wl.Height)))));
 
-        float whoW = DrawPillButton(g, "Who is using it", fontSmall, hx - 12 * s, pad, wl.Height, muted, border, s);
+        float whoW = DrawPillButton(g, T("Who is using it"), fontSmall, hx - 12 * s, pad, wl.Height, muted, border, s);
         hx -= 12 * s + whoW;
-        _hot.Add((new RectangleF(hx, pad - 2 * s, whoW, wl.Height + 4 * s), "Per-process energy estimates (opens a window)", _showOffenders));
+        _hot.Add((new RectangleF(hx, pad - 2 * s, whoW, wl.Height + 4 * s), T("Per-process energy estimates (opens a window)"), _showOffenders));
 
         // Big number + status
         float y = pad + 20 * s;
@@ -220,11 +226,11 @@ public sealed class FlyoutForm : Form
         if (pkgNow is double pw && !packageMode)
         {
             int win = Settings.PackageWindowSeconds;
-            string lbl = win > 1 ? $"package ({win} s avg) " : "package ";
+            string lbl = win > 1 ? T("package ({0} s avg) ", win) : T("package ");
             segments.Add((lbl, brushMuted));
             segments.Add(($"{pw:0.0} W", brushPackage));
             float w = g.MeasureString($"{lbl}{pw:0.0} W", fontSmall).Width;
-            _hot.Add((new RectangleF(pad, rowY, w, fontSmall.GetHeight(g)), PackageHelp, null));
+            _hot.Add((new RectangleF(pad, rowY, w, fontSmall.GetHeight(g)), T(PackageHelp), null));
         }
         if (ctx is not null)
         {
@@ -233,7 +239,7 @@ public sealed class FlyoutForm : Form
             if (ctx.Brightness is int b)
             {
                 segments.Add(("   \u00B7   ", brushMuted));
-                segments.Add(($"brightness {b} %", brushMuted));
+                segments.Add((T("brightness {0} %", b), brushMuted));
             }
         }
         DrawSegments(g, pad, rowY, fontSmall, segments);
@@ -242,16 +248,18 @@ public sealed class FlyoutForm : Form
         float chartTop = rowY + 26 * s;
         float chartBottom = Height - pad - 40 * s;
         var chart = new RectangleF(pad, chartTop, Width - 2 * pad, chartBottom - chartTop);
-        DrawChart(g, chart, samples, span, accent, packageLine, grid, muted, fontSmall, s);
+        string yMaxLabel = DrawChart(g, chart, samples, span, accent, packageLine, grid, muted, fontSmall, s);
         _hot.Add((chart, null, CycleWindow));
 
         // Legend centred on the x-axis label row, between "-N min" and "now"
         bool hasPackage = samples.Any(x => x.PackageWatts is not null);
-        float legendW = LegendWidth(g, fontSmall, "battery", s) + (hasPackage ? 10 * s + LegendWidth(g, fontSmall, "package", s) : 0);
-        float lx = chart.Left + (chart.Width - legendW) / 2;
+        float legendW = LegendWidth(g, fontSmall, T("battery"), s) + (hasPackage ? 10 * s + LegendWidth(g, fontSmall, T("package"), s) : 0);
+        float axisLeft = chart.Left + g.MeasureString($"-{(int)span.TotalMinutes} min", fontSmall).Width + 8 * s;
+        float axisRight = chart.Right - g.MeasureString($"{yMaxLabel} W", fontSmall).Width - 6 * s - g.MeasureString(T("now"), fontSmall).Width - 8 * s;
+        float lx = axisLeft + (axisRight - axisLeft - legendW) / 2;
         float ly = chart.Bottom + 2 * s;
-        lx = DrawLegend(g, lx, ly, fontSmall, brushMuted, accent, "battery", s);
-        if (hasPackage) DrawLegend(g, lx + 10 * s, ly, fontSmall, brushMuted, packageLine, "package", s);
+        lx = DrawLegend(g, lx, ly, fontSmall, brushMuted, accent, T("battery"), s);
+        if (hasPackage) DrawLegend(g, lx + 10 * s, ly, fontSmall, brushMuted, packageLine, T("package"), s);
 
         // Footer: stats. The asterisk marks a mean of gauge samples, used until the window holds
         // enough continuous discharge for the capacity-drop average.
@@ -262,7 +270,7 @@ public sealed class FlyoutForm : Form
             var pkgSamples = packageMode ? History.BucketPackage(samples, Settings.PackageWindowSeconds).Where(v => v is not null).Select(v => v!.Value).ToList() : null;
             if (pkgSamples is { Count: > 0 })
             {
-                stats = $"package avg {pkgSamples.Average():0.0} W   \u00B7   peak {pkgSamples.Max():0.0} W   \u00B7   min {pkgSamples.Min():0.0} W";
+                stats = T("package avg {0} W   \u00B7   peak {1} W   \u00B7   min {2} W", $"{pkgSamples.Average():0.0}", $"{pkgSamples.Max():0.0}", $"{pkgSamples.Min():0.0}");
             }
             else
             {
@@ -270,7 +278,7 @@ public sealed class FlyoutForm : Form
                 double avg = capAvg ?? samples.Average(x => Math.Abs(x.Watts));
                 double peak = samples.Max(x => Math.Abs(x.Watts));
                 double min = samples.Min(x => Math.Abs(x.Watts));
-                stats = $"avg {avg:0.0} W{(capAvg is null ? "*" : "")}   \u00B7   peak {peak:0.0} W   \u00B7   min {min:0.0} W";
+                stats = T("avg {0} W{1}   \u00B7   peak {2} W   \u00B7   min {3} W", $"{avg:0.0}", capAvg is null ? "*" : "", $"{peak:0.0}", $"{min:0.0}");
             }
             g.DrawString(stats, fontSmall, brushMuted, pad, footY);
         }
@@ -331,7 +339,8 @@ public sealed class FlyoutForm : Form
         return x + box + 4 * s + g.MeasureString(label, font).Width;
     }
 
-    private static void DrawChart(Graphics g, RectangleF r, List<Sample> samples, TimeSpan span, Color accent, Color package, Color grid, Color muted, Font font, float s)
+    /// <summary>Draws the chart; returns the top axis label (without unit) so the caller knows the gutter width.</summary>
+    private static string DrawChart(Graphics g, RectangleF r, List<Sample> samples, TimeSpan span, Color accent, Color package, Color grid, Color muted, Font font, float s)
     {
         // Axis follows the battery series; package bursts are clipped at the top so they cannot squash it.
         // On AC the battery series sits at zero, so the package series takes over the scale.
@@ -357,10 +366,11 @@ public sealed class FlyoutForm : Form
             g.DrawString(lbl, font, mutedBrush, full.Right - sz.Width, gy - sz.Height / 2);
         }
         g.DrawString($"-{(int)span.TotalMinutes} min", font, mutedBrush, r.Left, r.Bottom + 2 * s);
-        var nowSz = g.MeasureString("now", font);
-        g.DrawString("now", font, mutedBrush, r.Right - nowSz.Width, r.Bottom + 2 * s);
+        var nowSz = g.MeasureString(T("now"), font);
+        g.DrawString(T("now"), font, mutedBrush, r.Right - nowSz.Width, r.Bottom + 2 * s);
 
-        if (samples.Count < 2) return;
+        string top = $"{yMax:0}";
+        if (samples.Count < 2) return top;
 
         var now = DateTime.Now;
         float X(Sample smp) => (float)(r.Left + Math.Clamp(1.0 - (now - smp.Time).Ticks / (double)span.Ticks, 0, 1) * r.Width);
@@ -400,6 +410,7 @@ public sealed class FlyoutForm : Form
             if (seg.Length >= 2) g.DrawLines(pline, seg);
             else g.FillEllipse(pdot, seg[0].X - rad / 2, seg[0].Y - rad / 2, rad, rad);
         }
+        return top;
     }
 
     /// <summary>Samples arrive once a second; a longer silence means the machine was asleep, so the line breaks there.</summary>
@@ -424,24 +435,24 @@ public sealed class FlyoutForm : Form
 
     private string StatusLine(Sample? last)
     {
-        if (last is null) return "waiting for data";
+        if (last is null) return T("waiting for data");
         var l = last.Value;
         var parts = new List<string>
         {
-            l.State switch
+            T(l.State switch
             {
                 PowerState.Discharging => "discharging",
                 PowerState.Charging => "charging",
                 PowerState.Idle when l.PackageWatts is not null => "CPU package, on AC",
                 PowerState.Idle => "on AC",
                 _ => "unknown",
-            }
+            })
         };
         if (l.Percent is double p) parts.Add($"{p:0} %");
 
         var left = EstimateTimeLeft(l);
         if (left is TimeSpan t)
-            parts.Add(t.TotalHours >= 1 ? $"{(int)t.TotalHours} h {t.Minutes:00} min left" : $"{t.Minutes} min left");
+            parts.Add(t.TotalHours >= 1 ? T("{0} h {1} min left", (int)t.TotalHours, t.Minutes.ToString("00")) : T("{0} min left", t.Minutes));
         return string.Join("  \u00B7  ", parts);
     }
 

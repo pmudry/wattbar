@@ -1,3 +1,5 @@
+using static WattBar.L10n;
+
 namespace WattBar;
 
 /// <summary>Owns the tray icon, the sampling timer and the flyout.</summary>
@@ -23,15 +25,15 @@ public sealed class TrayApp : ApplicationContext
 
     public TrayApp(bool showFlyout = false, bool showOffenders = false)
     {
-        _flyout = new FlyoutForm(_history, () => _context, ShowOffenders, (owner, at) => BuildMenu(forFlyout: true).Show(owner, at));
+        _flyout = new FlyoutForm(_history, () => _context, ShowOffenders, ShowSettingsMenu);
 
-        _startupItem = new ToolStripMenuItem("Start with Windows", null, (_, _) => ToggleStartup()) { Checked = Startup.IsEnabled() };
+        _startupItem = new ToolStripMenuItem(T("Start with Windows"), null, (_, _) => ToggleStartup()) { Checked = Startup.IsEnabled() };
 
         _icon = new NotifyIcon
         {
             ContextMenuStrip = BuildMenu(forFlyout: false),
             Text = "WattBar",
-            Icon = SystemIcons.Application,
+            Icon = AppIcon ?? SystemIcons.Application,
             Visible = true,
         };
         _icon.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ToggleFlyout(); };
@@ -87,7 +89,7 @@ public sealed class TrayApp : ApplicationContext
         _icon.Icon = packageMode
             ? TrayIconRenderer.Render(size, pkgNow!.Value, PowerState.Discharging, spark, light, digitColor: Theme.Package(!light))
             : TrayIconRenderer.Render(size, sample.Watts, sample.State, spark, light);
-        if (old is not null && old != SystemIcons.Application) old.Dispose();
+        if (old is not null && old != SystemIcons.Application && old != AppIcon) old.Dispose();
 
         _icon.Text = Truncate(Tooltip(sample), 127);
 
@@ -100,19 +102,19 @@ public sealed class TrayApp : ApplicationContext
 
     private string Tooltip(Sample s)
     {
-        string state = s.State switch
+        string state = T(s.State switch
         {
             PowerState.Discharging => "discharging",
             PowerState.Charging => "charging",
             PowerState.Idle => "on AC",
             _ => "unknown",
-        };
+        });
         string pct = s.Percent is double p ? $" \u00B7 {p:0} %" : "";
         double? pkgNow = _history.PackageNow();
-        string pkg = pkgNow is double w ? $"\nCPU package {w:0.0} W" : "";
+        string pkg = pkgNow is double w ? "\n" + T("CPU package {0} W", $"{w:0.0}") : "";
         string ctx = _context is not null ? $"\n{_context.Describe()}" : "";
         if (s.State == PowerState.Idle && pkgNow is double pw)
-            return $"CPU package {pw:0.0} W (on AC, battery idle){pct}{ctx}";
+            return T("CPU package {0} W (on AC, battery idle)", $"{pw:0.0}") + pct + ctx;
         return $"{Math.Abs(s.Watts):0.0} W {state}{pct}{pkg}{ctx}";
     }
 
@@ -124,40 +126,77 @@ public sealed class TrayApp : ApplicationContext
         _flyout.ShowAtTray();
     }
 
+    private ContextMenuStrip? _settingsMenu;
+
+    private void ShowSettingsMenu(Control owner, Point at)
+    {
+        _settingsMenu?.Dispose(); // the previous one closed long ago
+        _settingsMenu = BuildMenu(forFlyout: true);
+        _settingsMenu.Show(owner, at);
+    }
+
     /// <summary>Tray menu, or the settings menu behind the flyout's gear (same items minus "Show chart").</summary>
     private ContextMenuStrip BuildMenu(bool forFlyout)
     {
         var menu = new ContextMenuStrip();
         if (!forFlyout)
         {
-            menu.Items.Add(new ToolStripMenuItem("Show chart", null, (_, _) => ToggleFlyout()) { Font = new Font(SystemFonts.MenuFont!, FontStyle.Bold) });
-            menu.Items.Add(new ToolStripMenuItem("Who is using it\u2026", null, (_, _) => ShowOffenders()));
+            menu.Items.Add(new ToolStripMenuItem(T("Show chart"), null, (_, _) => ToggleFlyout()) { Font = new Font(SystemFonts.MenuFont!, FontStyle.Bold) });
+            menu.Items.Add(new ToolStripMenuItem(T("Who is using it\u2026"), null, (_, _) => ShowOffenders()));
         }
 
-        var theme = new ToolStripMenuItem("Theme");
+        var theme = new ToolStripMenuItem(T("Theme"));
         foreach (var mode in Enum.GetValues<Theme.Mode>())
         {
-            var item = new ToolStripMenuItem(mode == Theme.Mode.System ? "Follow Windows" : mode.ToString()) { Checked = Theme.Selected == mode };
+            var item = new ToolStripMenuItem(T(mode == Theme.Mode.System ? "Follow Windows" : mode.ToString())) { Checked = Theme.Selected == mode };
             item.Click += (_, _) => SetTheme(mode);
             theme.DropDownItems.Add(item);
         }
         menu.Items.Add(theme);
 
-        var readout = new ToolStripMenuItem("Package readout");
+        var language = new ToolStripMenuItem(T("Language"));
+        foreach (var lang in Enum.GetValues<L10n.Lang>())
+        {
+            var item = new ToolStripMenuItem(L10n.Name(lang)) { Checked = L10n.Selected == lang };
+            item.Click += (_, _) => SetLanguage(lang);
+            language.DropDownItems.Add(item);
+        }
+        menu.Items.Add(language);
+
+        var readout = new ToolStripMenuItem(T("Package readout"));
         foreach (int secs in Settings.PackageWindows)
         {
-            var item = new ToolStripMenuItem(secs == 1 ? "Every second, raw" : $"{secs} s moving average") { Checked = Settings.PackageWindowSeconds == secs };
+            var item = new ToolStripMenuItem(secs == 1 ? T("Every second, raw") : T("Every {0} s, block average", secs)) { Checked = Settings.PackageWindowSeconds == secs };
             item.Click += (_, _) => { Settings.PackageWindowSeconds = secs; _flyout.Invalidate(); RebuildMenu(); };
             readout.DropDownItems.Add(item);
         }
         menu.Items.Add(readout);
 
         _startupItem.Checked = Startup.IsEnabled();
-        menu.Items.Add(forFlyout ? new ToolStripMenuItem("Start with Windows", null, (_, _) => ToggleStartup()) { Checked = Startup.IsEnabled() } : _startupItem);
+        _startupItem.Text = T("Start with Windows");
+        menu.Items.Add(forFlyout ? new ToolStripMenuItem(T("Start with Windows"), null, (_, _) => ToggleStartup()) { Checked = Startup.IsEnabled() } : _startupItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("About WattBar\u2026", null, (_, _) => ShowAbout()));
-        menu.Items.Add(new ToolStripMenuItem("Exit", null, (_, _) => Exit()));
+        menu.Items.Add(new ToolStripMenuItem(T("About WattBar\u2026"), null, (_, _) => ShowAbout()));
+        menu.Items.Add(new ToolStripMenuItem(T("Exit"), null, (_, _) => Exit()));
         return menu;
+    }
+
+    private void SetLanguage(L10n.Lang lang)
+    {
+        L10n.Selected = lang;
+        _flyout.Invalidate();
+        _offenders?.Dispose();
+        _offenders = null;
+        RebuildMenu();
+    }
+
+    /// <summary>The exe's own icon, used for windows and as the tray icon until the first sample.</summary>
+    public static readonly Icon? AppIcon = LoadAppIcon();
+
+    private static Icon? LoadAppIcon()
+    {
+        try { return Environment.ProcessPath is string exe ? Icon.ExtractAssociatedIcon(exe) : null; }
+        catch { return null; }
     }
 
     private void SetTheme(Theme.Mode mode)
@@ -179,8 +218,10 @@ public sealed class TrayApp : ApplicationContext
 
     private void RebuildMenu()
     {
-        _icon.ContextMenuStrip?.Dispose();
+        // Called from a menu item's Click: dispose the old menu only after this message is fully handled.
+        var old = _icon.ContextMenuStrip;
         _icon.ContextMenuStrip = BuildMenu(forFlyout: false);
+        if (old is not null) _flyout.BeginInvoke(() => old.Dispose());
     }
 
     private void ShowAbout()

@@ -22,18 +22,18 @@ So WattBar shows watts, the unit the battery actually cares about, and shows it 
 
 ## Preview
 
-| Tray icon (5× zoom) | Flyout |
-|:---:|:---:|
-| <img src="./docs/tray.png" width="280" alt="Tray icon preview"> | <img src="./docs/flyout.png" width="380" alt="Flyout preview"> |
+| Tray icon (2× zoom) | Flyout | About |
+|:---:|:---:|:---:|
+| <img src="./docs/tray.png" width="180" alt="Tray icon preview"> | <img src="./docs/flyout.png" width="300" alt="Flyout preview"> | <img src="./docs/about.png" width="260" alt="About box"> |
 
-<img src="./docs/offenders.png" width="680" alt="Who is using it window">
+<img src="./docs/offenders.png" width="600" alt="Who is using it window">
 
 ## Features
 
 - **Watts in the tray** — battery drain, redrawn every second, with a two-minute sparkline of CPU package power behind the digits. On AC with an idle battery it shows the package power instead
 - **Chart flyout** — click the icon for the last 1 to 60 minutes of battery and package power, the average and time left, the active power scheme and brightness
 - **Who is using it** — per-process energy shares behind Task Manager's "Power usage" column, with heavy background processes highlighted
-- **Settings** — theme, package readout rate, start with Windows, from the gear in the flyout or the tray menu
+- **Settings** — theme, language (English, French, German, Italian, following Windows by default), package readout rate, start with Windows, from the gear in the flyout or the tray menu
 - **Self-pinning** — promotes itself out of the tray overflow so it stays visible
 
 ## Quick Start
@@ -46,7 +46,7 @@ So WattBar shows watts, the unit the battery actually cares about, and shows it 
 .\dist\WattBar.exe
 ```
 
-Right-click the icon for **Show chart**, **Who is using it…**, **Theme**, **Package readout**, **Start with Windows**, **About** and **Exit**. The gear in the flyout opens the same settings.
+Right-click the icon for **Show chart**, **Who is using it…**, **Theme**, **Language**, **Package readout**, **Start with Windows**, **About** and **Exit**. The gear in the flyout opens the same settings.
 
 ## How it reads the numbers
 
