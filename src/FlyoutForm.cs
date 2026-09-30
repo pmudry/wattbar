@@ -244,7 +244,7 @@ public sealed class FlyoutForm : Form
         {
             float footY = Height - pad - 16 * s;
             string stats;
-            var pkgSamples = packageMode ? History.SmoothPackage(samples, Settings.PackageWindow).Where(v => v is not null).Select(v => v!.Value).ToList() : null;
+            var pkgSamples = packageMode ? History.BucketPackage(samples, Settings.PackageWindowSeconds).Where(v => v is not null).Select(v => v!.Value).ToList() : null;
             if (pkgSamples is { Count: > 0 })
             {
                 stats = $"package avg {pkgSamples.Average():0.0} W   \u00B7   peak {pkgSamples.Max():0.0} W   \u00B7   min {pkgSamples.Min():0.0} W";
@@ -321,7 +321,7 @@ public sealed class FlyoutForm : Form
         // Axis follows the battery series; package bursts are clipped at the top so they cannot squash it.
         // On AC the battery series sits at zero, so the package series takes over the scale.
         double batteryMax = samples.Count > 0 ? samples.Max(x => Math.Abs(x.Watts)) : 0;
-        var smoothed = History.SmoothPackage(samples, Settings.PackageWindow);
+        var smoothed = History.BucketPackage(samples, Settings.PackageWindowSeconds);
         double packageMax = smoothed.Length > 0 ? smoothed.Max(v => v ?? 0) : 0;
         double maxW = batteryMax >= 1 ? batteryMax : Math.Max(Math.Max(batteryMax, packageMax), samples.Count > 0 ? 0 : 10);
         double step = NiceStep(maxW);

@@ -40,34 +40,55 @@ public sealed class History
         return samples.Count == 0 ? null : samples.Average(s => Math.Abs(s.Watts));
     }
 
-    /// <summary>Package power of the newest sample, averaged over the configured window (raw when 1 s).</summary>
+    /// <summary>
+    /// Package readout at the configured rate: raw newest sample at 1 s; otherwise the average of the last
+    /// complete N-second block, so the value changes only every N seconds.
+    /// </summary>
     public double? PackageNow()
     {
-        int w = Settings.PackageWindowSeconds;
-        return w <= 1 ? Last?.PackageWatts : PackageAverage(TimeSpan.FromSeconds(w));
+        int n = Settings.PackageWindowSeconds;
+        if (n <= 1) return Last?.PackageWatts;
+        var blocks = PackageBlocks(Since(TimeSpan.FromSeconds(2 * n + 1)), n, out long current);
+        if (blocks.TryGetValue(current - 1, out var prev)) return prev;
+        return blocks.TryGetValue(current, out var cur) ? cur : null; // first seconds after start
     }
 
-    /// <summary>The samples' package values as a trailing moving average over <paramref name="window"/>; null entries stay null.</summary>
-    public static double?[] SmoothPackage(List<Sample> samples, TimeSpan window)
+    /// <summary>
+    /// Package values for the chart at the configured rate: each sample shows its N-second block's average;
+    /// samples in the block still being filled show the previous block, so the line ends at <see cref="PackageNow"/>.
+    /// </summary>
+    public static double?[] BucketPackage(List<Sample> samples, int seconds)
     {
         var result = new double?[samples.Count];
-        if (window <= TimeSpan.FromSeconds(1))
+        if (seconds <= 1)
         {
             for (int i = 0; i < samples.Count; i++) result[i] = samples[i].PackageWatts;
             return result;
         }
-        double sum = 0; int count = 0, start = 0;
+        var blocks = PackageBlocks(samples, seconds, out long current);
         for (int i = 0; i < samples.Count; i++)
         {
-            if (samples[i].PackageWatts is double v) { sum += v; count++; }
-            while (samples[i].Time - samples[start].Time > window)
-            {
-                if (samples[start].PackageWatts is double old) { sum -= old; count--; }
-                start++;
-            }
-            result[i] = samples[i].PackageWatts is null ? null : count > 0 ? sum / count : null;
+            if (samples[i].PackageWatts is null) continue;
+            long k = Block(samples[i].Time, seconds);
+            if (k == current) k = blocks.ContainsKey(current - 1) ? current - 1 : current;
+            result[i] = blocks.TryGetValue(k, out var v) ? v : null;
         }
         return result;
+    }
+
+    private static long Block(DateTime t, int seconds) => t.Ticks / (seconds * TimeSpan.TicksPerSecond);
+
+    private static Dictionary<long, double> PackageBlocks(List<Sample> samples, int seconds, out long current)
+    {
+        current = Block(DateTime.Now, seconds);
+        var sum = new Dictionary<long, (double s, int c)>();
+        foreach (var smp in samples)
+        {
+            if (smp.PackageWatts is not double v) continue;
+            long k = Block(smp.Time, seconds);
+            sum[k] = sum.TryGetValue(k, out var a) ? (a.s + v, a.c + 1) : (v, 1);
+        }
+        return sum.ToDictionary(kv => kv.Key, kv => kv.Value.s / kv.Value.c);
     }
 
     /// <summary>Mean package power over the span, or null when no sample carries one.</summary>
