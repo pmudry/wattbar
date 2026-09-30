@@ -5,8 +5,11 @@ namespace WattBar;
 
 public enum PowerState { Unknown, Discharging, Charging, Idle }
 
-/// <summary>One battery reading. <see cref="Watts"/> is positive while draining, negative while charging.</summary>
-public readonly record struct Sample(DateTime Time, double Watts, PowerState State, double? Percent, int? RemainingMwh);
+/// <summary>
+/// One reading. <see cref="Watts"/> is the battery gauge, positive while draining, negative while charging.
+/// <see cref="PackageWatts"/> is the CPU package (RAPL) power when the machine exposes it.
+/// </summary>
+public readonly record struct Sample(DateTime Time, double Watts, PowerState State, double? Percent, int? RemainingMwh, double? PackageWatts = null);
 
 public static class BatteryReader
 {

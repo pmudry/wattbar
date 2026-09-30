@@ -9,6 +9,11 @@ public static class Theme
     public static readonly Color MagentaLight = ColorTranslator.FromHtml("#ec008b");
     public static readonly Color MagentaDark = ColorTranslator.FromHtml("#f04ea3");
     public static readonly Color Teal = Color.FromArgb(152, 199, 191);
+    // ISC "informatique logicielle" blue, used for the CPU package series.
+    public static readonly Color Blue = Color.FromArgb(140, 198, 230);
+    public static readonly Color BlueLight = Color.FromArgb(60, 140, 190);
+
+    public static Color Package(bool dark) => dark ? Blue : BlueLight;
 
     public static Color Accent(PowerState state, bool dark) =>
         state == PowerState.Charging ? Teal : (dark ? MagentaDark : MagentaLight);
