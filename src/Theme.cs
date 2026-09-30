@@ -32,9 +32,42 @@ public static class Theme
         }
     }
 
-    /// <summary>True when apps should use the dark theme.</summary>
+    /// <summary>Theme override chosen by the user; System follows Windows.</summary>
+    public enum Mode { System, Dark, Light }
+
+    public static Mode Selected
+    {
+        get
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(@"Software\WattBar");
+                return Enum.TryParse<Mode>(key?.GetValue("Theme") as string, ignoreCase: true, out var m) ? m : Mode.System;
+            }
+            catch { return Mode.System; }
+        }
+        set
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(@"Software\WattBar");
+            key.SetValue("Theme", value.ToString());
+        }
+    }
+
+    public static SystemColorMode ColorMode => Selected switch
+    {
+        Mode.Dark => SystemColorMode.Dark,
+        Mode.Light => SystemColorMode.Classic,
+        _ => SystemColorMode.System,
+    };
+
+    /// <summary>True when the app should draw dark: the user's choice, or Windows' setting when following the system.</summary>
     public static bool AppsAreDark()
     {
+        switch (Selected)
+        {
+            case Mode.Dark: return true;
+            case Mode.Light: return false;
+        }
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");

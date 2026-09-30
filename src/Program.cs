@@ -20,6 +20,14 @@ static class Program
         if (inst >= 0) Environment.Exit(E3Task.Install(inst + 1 < args.Length ? args[inst + 1] : System.Security.Principal.WindowsIdentity.GetCurrent().Name));
         if (args.Contains("--uninstall-task")) Environment.Exit(E3Task.Uninstall());
 
+        if (args.Contains("--about"))
+        {
+            ApplicationConfiguration.Initialize();
+            Application.SetColorMode(Theme.ColorMode);
+            Application.Run(new AboutForm());
+            return;
+        }
+
         bool show = args.Contains("--show");
         bool who = args.Contains("--who");
 
@@ -45,7 +53,7 @@ static class Program
 
         ApplicationConfiguration.Initialize();
 #pragma warning disable WFO5001 // dark title bars and controls for the "who is using it" window
-        Application.SetColorMode(SystemColorMode.System);
+        Application.SetColorMode(Theme.ColorMode);
 #pragma warning restore WFO5001
         Application.Run(new TrayApp(showFlyout: show, showOffenders: who));
     }

@@ -15,6 +15,8 @@ public sealed class FlyoutForm : Form
 
     private readonly History _history;
     private readonly Func<PowerContext?> _context;
+    private readonly Action _showOffenders;
+    private readonly Action<Control, Point> _showSettings;
     private int _windowIndex = 1; // 5 minutes by default
     private TimeSpan? _shownLeft;
 
@@ -24,13 +26,15 @@ public sealed class FlyoutForm : Form
         "SSD and the rest of the machine. The battery gauge is a slow one-minute average;\n" +
         "this one reacts instantly.";
     private readonly ToolTip _tip = new() { InitialDelay = 300, ReshowDelay = 100 };
-    private RectangleF _packageHot;
-    private bool _tipShown;
+    private readonly List<(RectangleF rect, string? tip, Action? click)> _hot = [];
+    private int _tipRegion = -1;
 
-    public FlyoutForm(History history, Func<PowerContext?> context)
+    public FlyoutForm(History history, Func<PowerContext?> context, Action showOffenders, Action<Control, Point> showSettings)
     {
         _history = history;
         _context = context;
+        _showOffenders = showOffenders;
+        _showSettings = showSettings;
 
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
@@ -86,7 +90,7 @@ public sealed class FlyoutForm : Form
     protected override void OnDeactivate(EventArgs e)
     {
         base.OnDeactivate(e);
-        if (_tipShown) { _tip.Hide(this); _tipShown = false; }
+        HideTip();
         HiddenAt = DateTime.Now;
         Hide();
     }
@@ -100,33 +104,36 @@ public sealed class FlyoutForm : Form
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        bool over = _packageHot.Contains(e.Location);
-        if (over && !_tipShown)
-        {
-            _tip.Show(PackageHelp, this, e.X, e.Y + 20);
-            _tipShown = true;
-        }
-        else if (!over && _tipShown)
-        {
-            _tip.Hide(this);
-            _tipShown = false;
-        }
+        int region = _hot.FindIndex(h => h.tip is not null && h.rect.Contains(e.Location));
+        if (region == _tipRegion) return;
+        if (_tipRegion >= 0) _tip.Hide(this);
+        _tipRegion = region;
+        if (region >= 0) _tip.Show(_hot[region].tip, this, e.X, e.Y + 20);
+        Cursor = _hot.Any(h => h.click is not null && h.rect.Contains(e.Location)) ? Cursors.Hand : Cursors.Default;
     }
 
     protected override void OnMouseLeave(EventArgs e)
     {
         base.OnMouseLeave(e);
-        if (_tipShown) { _tip.Hide(this); _tipShown = false; }
+        HideTip();
+    }
+
+    private void HideTip()
+    {
+        if (_tipRegion >= 0) { _tip.Hide(this); _tipRegion = -1; }
     }
 
     protected override void OnMouseClick(MouseEventArgs e)
     {
         base.OnMouseClick(e);
-        if (e.Button == MouseButtons.Left)
-        {
-            _windowIndex = (_windowIndex + 1) % Windows.Length;
-            Invalidate();
-        }
+        if (e.Button != MouseButtons.Left) return;
+        _hot.FirstOrDefault(h => h.click is not null && h.rect.Contains(e.Location)).click?.Invoke();
+    }
+
+    private void CycleWindow()
+    {
+        _windowIndex = (_windowIndex + 1) % Windows.Length;
+        Invalidate();
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -165,16 +172,29 @@ public sealed class FlyoutForm : Form
         using var brushAccent = new SolidBrush(accent);
         using var brushPackage = new SolidBrush(package);
 
-        // Header
+        _hot.Clear();
+
+        // Header: title left; "who is using it", gear and the time window on the right
         g.DrawString("Battery power", fontSmall, brushMuted, pad, pad);
         string windowLabel = $"last {(int)span.TotalMinutes} min  \u25BE";
         var wl = g.MeasureString(windowLabel, fontSmall);
-        g.DrawString(windowLabel, fontSmall, brushMuted, Width - pad - wl.Width, pad);
+        float hx = Width - pad - wl.Width;
+        g.DrawString(windowLabel, fontSmall, brushMuted, hx, pad);
+        _hot.Add((new RectangleF(hx, pad, wl.Width, wl.Height), "Time window: click to cycle 1, 5, 10, 30, 60 min", CycleWindow));
+
+        float gearW = DrawGlyphButton(g, "\uE713", hx - 10 * s, pad, wl.Height, muted, s);
+        hx -= 10 * s + gearW;
+        _hot.Add((new RectangleF(hx, pad, gearW, wl.Height), "Settings: theme, start with Windows, about", () => _showSettings(this, new Point((int)hx, (int)(pad + wl.Height)))));
+
+        float whoW = DrawPillButton(g, "Who is using it", fontSmall, hx - 12 * s, pad, wl.Height, muted, border, s);
+        hx -= 12 * s + whoW;
+        _hot.Add((new RectangleF(hx, pad - 2 * s, whoW, wl.Height + 4 * s), "Per-process energy estimates (opens a window)", _showOffenders));
 
         // Big number + status
         float y = pad + 20 * s;
-        bool packageMode = last is { State: PowerState.Idle, PackageWatts: not null };
-        string big = last is null ? "--" : packageMode ? $"{last!.Value.PackageWatts!.Value:0.0} W" : $"{Math.Abs(last.Value.Watts):0.0} W";
+        double? pkgNow = _history.PackageNow();
+        bool packageMode = last is { State: PowerState.Idle } && pkgNow is not null;
+        string big = last is null ? "--" : packageMode ? $"{pkgNow!.Value:0.0} W" : $"{Math.Abs(last.Value.Watts):0.0} W";
         g.DrawString(big, fontBig, packageMode ? brushPackage : brushFg, pad - 2 * s, y);
         var bigSize = g.MeasureString(big, fontBig);
         g.DrawString(StatusLine(last), fontSmall, brushMuted, pad + bigSize.Width + 4 * s, y + bigSize.Height - 22 * s);
@@ -182,13 +202,14 @@ public sealed class FlyoutForm : Form
         // Context row: package power, scheme, brightness
         float rowY = y + bigSize.Height + 2 * s;
         var segments = new List<(string text, Brush brush)>();
-        _packageHot = RectangleF.Empty;
-        if (last?.PackageWatts is double pw && !packageMode)
+        if (pkgNow is double pw && !packageMode)
         {
-            segments.Add(("package ", brushMuted));
+            int win = Settings.PackageWindowSeconds;
+            string lbl = win > 1 ? $"package ({win} s avg) " : "package ";
+            segments.Add((lbl, brushMuted));
             segments.Add(($"{pw:0.0} W", brushPackage));
-            float w = g.MeasureString($"package {pw:0.0} W", fontSmall).Width;
-            _packageHot = new RectangleF(pad, rowY, w, fontSmall.GetHeight(g));
+            float w = g.MeasureString($"{lbl}{pw:0.0} W", fontSmall).Width;
+            _hot.Add((new RectangleF(pad, rowY, w, fontSmall.GetHeight(g)), PackageHelp, null));
         }
         if (ctx is not null)
         {
@@ -207,6 +228,7 @@ public sealed class FlyoutForm : Form
         float chartBottom = Height - pad - 40 * s;
         var chart = new RectangleF(pad, chartTop, Width - 2 * pad, chartBottom - chartTop);
         DrawChart(g, chart, samples, span, accent, packageLine, grid, muted, fontSmall, s);
+        _hot.Add((chart, null, CycleWindow));
 
         // Legend centred on the x-axis label row, between "-N min" and "now"
         bool hasPackage = samples.Any(x => x.PackageWatts is not null);
@@ -222,7 +244,7 @@ public sealed class FlyoutForm : Form
         {
             float footY = Height - pad - 16 * s;
             string stats;
-            var pkgSamples = packageMode ? samples.Where(x => x.PackageWatts is not null).Select(x => x.PackageWatts!.Value).ToList() : null;
+            var pkgSamples = packageMode ? History.SmoothPackage(samples, Settings.PackageWindow).Where(v => v is not null).Select(v => v!.Value).ToList() : null;
             if (pkgSamples is { Count: > 0 })
             {
                 stats = $"package avg {pkgSamples.Average():0.0} W   \u00B7   peak {pkgSamples.Max():0.0} W   \u00B7   min {pkgSamples.Min():0.0} W";
@@ -237,6 +259,38 @@ public sealed class FlyoutForm : Form
             }
             g.DrawString(stats, fontSmall, brushMuted, pad, footY);
         }
+    }
+
+    /// <summary>Draws a Segoe MDL2 glyph right-aligned at <paramref name="right"/>; returns its width.</summary>
+    private static float DrawGlyphButton(Graphics g, string glyph, float right, float y, float h, Color colour, float s)
+    {
+        using var brush = new SolidBrush(colour);
+        Font font;
+        try { font = new Font("Segoe MDL2 Assets", 11f); }
+        catch { font = new Font("Segoe UI Symbol", 11f); glyph = "\u2699"; }
+        using (font)
+        {
+            var sz = g.MeasureString(glyph, font);
+            g.DrawString(glyph, font, brush, right - sz.Width, y + (h - sz.Height) / 2);
+            return sz.Width;
+        }
+    }
+
+    /// <summary>Draws a small outlined text button right-aligned at <paramref name="right"/>; returns its width.</summary>
+    private static float DrawPillButton(Graphics g, string text, Font font, float right, float y, float h, Color colour, Color border, float s)
+    {
+        var sz = g.MeasureString(text, font);
+        float w = sz.Width + 12 * s, hh = h + 4 * s, x = right - w, yy = y - 2 * s;
+        using var path = new GraphicsPath();
+        float r = hh / 2;
+        path.AddArc(x, yy, hh, hh, 90, 180);
+        path.AddArc(x + w - hh, yy, hh, hh, 270, 180);
+        path.CloseFigure();
+        using var pen = new Pen(border);
+        using var brush = new SolidBrush(colour);
+        g.DrawPath(pen, path);
+        g.DrawString(text, font, brush, x + 6 * s, y);
+        return w;
     }
 
     private static void DrawSegments(Graphics g, float x, float y, Font font, List<(string text, Brush brush)> segments)
@@ -267,7 +321,8 @@ public sealed class FlyoutForm : Form
         // Axis follows the battery series; package bursts are clipped at the top so they cannot squash it.
         // On AC the battery series sits at zero, so the package series takes over the scale.
         double batteryMax = samples.Count > 0 ? samples.Max(x => Math.Abs(x.Watts)) : 0;
-        double packageMax = samples.Count > 0 ? samples.Max(x => x.PackageWatts ?? 0) : 0;
+        var smoothed = History.SmoothPackage(samples, Settings.PackageWindow);
+        double packageMax = smoothed.Length > 0 ? smoothed.Max(v => v ?? 0) : 0;
         double maxW = batteryMax >= 1 ? batteryMax : Math.Max(Math.Max(batteryMax, packageMax), samples.Count > 0 ? 0 : 10);
         double step = NiceStep(maxW);
         double yMax = Math.Max(step, Math.Ceiling(maxW / step) * step);
@@ -316,7 +371,7 @@ public sealed class FlyoutForm : Form
         }
 
         // Package power: thin line, only where present
-        var ppts = samples.Where(x => x.PackageWatts is not null).Select(x => new PointF(X(x), Y(x.PackageWatts!.Value))).ToArray();
+        var ppts = samples.Select((x, i) => (x, v: smoothed[i])).Where(t => t.v is not null).Select(t => new PointF(X(t.x), Y(t.v!.Value))).ToArray();
         if (ppts.Length >= 2)
         {
             using var pline = new Pen(package, 1.5f * s) { LineJoin = LineJoin.Round };

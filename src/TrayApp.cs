@@ -23,20 +23,13 @@ public sealed class TrayApp : ApplicationContext
 
     public TrayApp(bool showFlyout = false, bool showOffenders = false)
     {
-        _flyout = new FlyoutForm(_history, () => _context);
+        _flyout = new FlyoutForm(_history, () => _context, ShowOffenders, (owner, at) => BuildMenu(forFlyout: true).Show(owner, at));
 
-        var menu = new ContextMenuStrip();
-        var show = new ToolStripMenuItem("Show chart", null, (_, _) => ToggleFlyout()) { Font = new Font(SystemFonts.MenuFont!, FontStyle.Bold) };
         _startupItem = new ToolStripMenuItem("Start with Windows", null, (_, _) => ToggleStartup()) { Checked = Startup.IsEnabled() };
-        menu.Items.Add(show);
-        menu.Items.Add(new ToolStripMenuItem("Who is using it\u2026", null, (_, _) => ShowOffenders()));
-        menu.Items.Add(_startupItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("Exit", null, (_, _) => Exit()));
 
         _icon = new NotifyIcon
         {
-            ContextMenuStrip = menu,
+            ContextMenuStrip = BuildMenu(forFlyout: false),
             Text = "WattBar",
             Icon = SystemIcons.Application,
             Visible = true,
@@ -88,10 +81,11 @@ public sealed class TrayApp : ApplicationContext
             : _history.Bins(SparkSpan, bins);
         // On AC with an idle battery the gauge reads zero; the CPU package is the only measured figure, so show it.
         bool light = Theme.TaskbarIsLight();
-        bool packageMode = sample.State == PowerState.Idle && sample.PackageWatts is double;
+        double? pkgNow = _history.PackageNow();
+        bool packageMode = sample.State == PowerState.Idle && pkgNow is double;
         var old = _icon.Icon;
         _icon.Icon = packageMode
-            ? TrayIconRenderer.Render(size, sample.PackageWatts!.Value, PowerState.Discharging, spark, light, digitColor: Theme.Package(!light))
+            ? TrayIconRenderer.Render(size, pkgNow!.Value, PowerState.Discharging, spark, light, digitColor: Theme.Package(!light))
             : TrayIconRenderer.Render(size, sample.Watts, sample.State, spark, light);
         if (old is not null && old != SystemIcons.Application) old.Dispose();
 
@@ -114,9 +108,10 @@ public sealed class TrayApp : ApplicationContext
             _ => "unknown",
         };
         string pct = s.Percent is double p ? $" \u00B7 {p:0} %" : "";
-        string pkg = s.PackageWatts is double w ? $"\nCPU package {w:0.0} W" : "";
+        double? pkgNow = _history.PackageNow();
+        string pkg = pkgNow is double w ? $"\nCPU package {w:0.0} W" : "";
         string ctx = _context is not null ? $"\n{_context.Describe()}" : "";
-        if (s.State == PowerState.Idle && s.PackageWatts is double pw)
+        if (s.State == PowerState.Idle && pkgNow is double pw)
             return $"CPU package {pw:0.0} W (on AC, battery idle){pct}{ctx}";
         return $"{Math.Abs(s.Watts):0.0} W {state}{pct}{pkg}{ctx}";
     }
@@ -127,6 +122,71 @@ public sealed class TrayApp : ApplicationContext
         // The mouse-down on the tray icon already deactivated and hid the flyout; that click means "close".
         if (DateTime.Now - _flyout.HiddenAt < TimeSpan.FromMilliseconds(500)) return;
         _flyout.ShowAtTray();
+    }
+
+    /// <summary>Tray menu, or the settings menu behind the flyout's gear (same items minus "Show chart").</summary>
+    private ContextMenuStrip BuildMenu(bool forFlyout)
+    {
+        var menu = new ContextMenuStrip();
+        if (!forFlyout)
+        {
+            menu.Items.Add(new ToolStripMenuItem("Show chart", null, (_, _) => ToggleFlyout()) { Font = new Font(SystemFonts.MenuFont!, FontStyle.Bold) });
+            menu.Items.Add(new ToolStripMenuItem("Who is using it\u2026", null, (_, _) => ShowOffenders()));
+        }
+
+        var theme = new ToolStripMenuItem("Theme");
+        foreach (var mode in Enum.GetValues<Theme.Mode>())
+        {
+            var item = new ToolStripMenuItem(mode == Theme.Mode.System ? "Follow Windows" : mode.ToString()) { Checked = Theme.Selected == mode };
+            item.Click += (_, _) => SetTheme(mode);
+            theme.DropDownItems.Add(item);
+        }
+        menu.Items.Add(theme);
+
+        var readout = new ToolStripMenuItem("Package readout");
+        foreach (int secs in Settings.PackageWindows)
+        {
+            var item = new ToolStripMenuItem(secs == 1 ? "Every second, raw" : $"{secs} s moving average") { Checked = Settings.PackageWindowSeconds == secs };
+            item.Click += (_, _) => { Settings.PackageWindowSeconds = secs; _flyout.Invalidate(); RebuildMenu(); };
+            readout.DropDownItems.Add(item);
+        }
+        menu.Items.Add(readout);
+
+        _startupItem.Checked = Startup.IsEnabled();
+        menu.Items.Add(forFlyout ? new ToolStripMenuItem("Start with Windows", null, (_, _) => ToggleStartup()) { Checked = Startup.IsEnabled() } : _startupItem);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem("About WattBar\u2026", null, (_, _) => ShowAbout()));
+        menu.Items.Add(new ToolStripMenuItem("Exit", null, (_, _) => Exit()));
+        return menu;
+    }
+
+    private void SetTheme(Theme.Mode mode)
+    {
+        Theme.Selected = mode;
+        try
+        {
+#pragma warning disable WFO5001
+            Application.SetColorMode(Theme.ColorMode);
+#pragma warning restore WFO5001
+        }
+        catch { /* applies to new windows only */ }
+        // Custom-painted windows repaint; framework-drawn ones are rebuilt on next use.
+        _flyout.Invalidate();
+        _offenders?.Dispose();
+        _offenders = null;
+        RebuildMenu();
+    }
+
+    private void RebuildMenu()
+    {
+        _icon.ContextMenuStrip?.Dispose();
+        _icon.ContextMenuStrip = BuildMenu(forFlyout: false);
+    }
+
+    private void ShowAbout()
+    {
+        using var about = new AboutForm();
+        about.ShowDialog();
     }
 
     private void ShowOffenders()

@@ -40,6 +40,36 @@ public sealed class History
         return samples.Count == 0 ? null : samples.Average(s => Math.Abs(s.Watts));
     }
 
+    /// <summary>Package power of the newest sample, averaged over the configured window (raw when 1 s).</summary>
+    public double? PackageNow()
+    {
+        int w = Settings.PackageWindowSeconds;
+        return w <= 1 ? Last?.PackageWatts : PackageAverage(TimeSpan.FromSeconds(w));
+    }
+
+    /// <summary>The samples' package values as a trailing moving average over <paramref name="window"/>; null entries stay null.</summary>
+    public static double?[] SmoothPackage(List<Sample> samples, TimeSpan window)
+    {
+        var result = new double?[samples.Count];
+        if (window <= TimeSpan.FromSeconds(1))
+        {
+            for (int i = 0; i < samples.Count; i++) result[i] = samples[i].PackageWatts;
+            return result;
+        }
+        double sum = 0; int count = 0, start = 0;
+        for (int i = 0; i < samples.Count; i++)
+        {
+            if (samples[i].PackageWatts is double v) { sum += v; count++; }
+            while (samples[i].Time - samples[start].Time > window)
+            {
+                if (samples[start].PackageWatts is double old) { sum -= old; count--; }
+                start++;
+            }
+            result[i] = samples[i].PackageWatts is null ? null : count > 0 ? sum / count : null;
+        }
+        return result;
+    }
+
     /// <summary>Mean package power over the span, or null when no sample carries one.</summary>
     public double? PackageAverage(TimeSpan span)
     {

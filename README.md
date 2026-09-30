@@ -25,8 +25,10 @@ A tiny Windows 11 tray app that shows how fast your laptop battery is draining, 
 
 - **Watts in the tray** — the icon is redrawn every second with the battery gauge reading; below 10 W it keeps one decimal. On AC with an idle battery it shows the CPU package power instead, in the package colour
 - **Sparkline in the icon** — the last two minutes of CPU package power, the only instantaneous signal, binned to the icon width
-- **Chart flyout** — click the icon for a plot of the last 1, 5, 10, 30 or 60 minutes with the battery gauge and the package power as two series; click the chart to cycle the window
+- **Chart flyout** — click the icon for a plot of the last 1, 5, 10, 30 or 60 minutes with the battery gauge and the package power as two series; click the chart to cycle the window. The header holds a "Who is using it" button and a settings gear
 - **Honest averages** — for windows with enough continuous discharge, the average and the time left come from the drop in remaining capacity, not from the mean of gauge samples
+- **Package readout** — raw every second, or a 5, 10 or 30 s moving average, chosen from the settings menu
+- **Theme** — follow Windows, or force dark or light, from the settings menu or the tray menu
 - **Context row** — package watts (hover for what that covers), active power scheme and Windows 11 power-mode overlay, panel brightness; the scheme turns magenta when it is not Balanced
 - **Theme aware** — digits invert on a light taskbar, flyout follows the app light/dark setting, rounded corners via DWM
 - **ISC colours** — magenta while discharging, teal while charging, blue for the package series
@@ -44,7 +46,7 @@ A tiny Windows 11 tray app that shows how fast your laptop battery is draining, 
 .\dist\WattBar.exe
 ```
 
-Right-click the icon for **Show chart**, **Who is using it…**, **Start with Windows** and **Exit**.
+Right-click the icon for **Show chart**, **Who is using it…**, **Theme**, **Package readout**, **Start with Windows**, **About** and **Exit**. The gear in the flyout opens the same settings.
 
 ## How it reads the numbers
 
@@ -68,7 +70,7 @@ The reasoning behind these choices is in [`docs/ENERGY-FINDINGS.md`](./docs/ENER
 
 ## Dependencies
 
-WattBar targets Windows 10 build 19041 or later and needs the .NET 10 desktop runtime. Building needs the SDK.
+WattBar is a single 4 MB exe that needs the .NET 10 desktop runtime; it targets Windows 10 build 19041 or later. The battery gauge comes from WMI rather than the WinRT API so that the 24 MB Windows SDK projection stays out of the bundle, and the ETW library ships without its kernel-trace and symbol helpers, which a real-time user-provider session does not need. Building needs the SDK.
 
 | Tool | Required for | Install |
 | --- | --- | --- |
