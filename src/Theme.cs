@@ -2,14 +2,14 @@ using Microsoft.Win32;
 
 namespace WattBar;
 
-/// <summary>Brand colours and Windows light/dark detection.</summary>
+/// <summary>Accent colours and Windows light/dark detection.</summary>
 public static class Theme
 {
-    // ISC signature magenta (light / dark variants) and the "embedded systems" teal for charging.
+    // Magenta accent (light / dark variants) and a teal for charging.
     public static readonly Color MagentaLight = ColorTranslator.FromHtml("#ec008b");
     public static readonly Color MagentaDark = ColorTranslator.FromHtml("#f04ea3");
     public static readonly Color Teal = Color.FromArgb(152, 199, 191);
-    // ISC "informatique logicielle" blue, used for the CPU package series.
+    // Blue, used for the CPU package series.
     public static readonly Color Blue = Color.FromArgb(140, 198, 230);
     public static readonly Color BlueLight = Color.FromArgb(60, 140, 190);
 

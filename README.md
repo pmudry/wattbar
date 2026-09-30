@@ -1,14 +1,9 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)"
-          srcset="https://raw.githubusercontent.com/ISC-HEI/isc-logos/main/white/ISC%20Logo%20inline%20white%20v3%20-%20large.webp">
-  <img align="right" height="50" alt="ISC Logo"
-       src="https://raw.githubusercontent.com/ISC-HEI/isc-logos/main/black/ISC%20Logo%20inline%20black%20v3%20-%20large.webp"/>
-</picture>
-
 [![.NET 10](https://img.shields.io/badge/.NET%2010-0d1117?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Windows 11](https://img.shields.io/badge/Windows%2011-0d1117)](https://www.microsoft.com/windows)
 
 # WattBar
+
+**→ [wattbar website](https://pmudry.github.io/wattbar/)**
 
 A tiny Windows 11 tray app that shows how fast your laptop battery is draining, in watts. The tray icon carries the live number with a two-minute sparkline behind it; clicking it opens a flyout with a chart of the last 1 to 60 minutes (5 by default), the CPU package power next to the battery figure, the active power scheme and brightness, and an estimate of the time left. Written in C# on [.NET 10](https://dotnet.microsoft.com/) with WinForms and GDI+, and it ships as a single exe.
 
@@ -82,7 +77,7 @@ WattBar is a single 4 MB exe that needs the .NET 10 desktop runtime; it targets 
 
 ## License
 
-Copyright © 2026 P.-A. Mudry / ISC — HES-SO Valais. Released under the [MIT License](https://opensource.org/licenses/MIT).
+Copyright © 2026 Pierre-André Mudry. Released under the [MIT License](https://opensource.org/licenses/MIT).
 
 ---
 

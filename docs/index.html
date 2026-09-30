@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WattBar</title>
+<meta name="description" content="Battery discharge power in the Windows 11 tray. Watts, not CPU load: sparkline icon, chart flyout, CPU package power, and a per-process view.">
+<link rel="icon" type="image/png" href="favicon.png">
+<meta property="og:title" content="WattBar">
+<meta property="og:description" content="Watts, not CPU load. Battery drain in the Windows 11 tray, with a chart and a per-process view.">
+<meta property="og:image" content="https://pmudry.github.io/wattbar/flyout.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #101013; --bg-2: #17171b; --card: #1c1c21; --border: #2a2a31;
+    --fg: #ececf0; --muted: #9a9aa6; --accent: #f04ea3; --accent-2: #8cc6e6; --accent-soft: rgba(240, 78, 163, .14);
+    --radius: 14px; --max: 1080px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fafafa; --bg-2: #f1f1f4; --card: #ffffff; --border: #e3e3e8;
+      --fg: #18181c; --muted: #61616b; --accent: #ec008b; --accent-2: #2f7fb3; --accent-soft: rgba(236, 0, 139, .10);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: "DM Sans", system-ui, sans-serif; font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre { font-family: "Fira Code", ui-monospace, monospace; font-size: .92em; }
+  pre { background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; overflow-x: auto; }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 20px; }
+  h1, h2, h3 { line-height: 1.15; margin: 0 0 .4em; letter-spacing: -.01em; }
+  h1 { font-size: clamp(2.2rem, 5vw, 3.6rem); font-weight: 700; }
+  h2 { font-size: clamp(1.6rem, 3vw, 2.2rem); }
+  h3 { font-size: 1.15rem; }
+  p { margin: 0 0 1em; }
+  .muted { color: var(--muted); }
+  section { padding: 72px 0; }
+  section + section { border-top: 1px solid var(--border); }
+
+  nav { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px); background: color-mix(in srgb, var(--bg) 82%, transparent); border-bottom: 1px solid var(--border); }
+  nav .wrap { display: flex; align-items: center; gap: 22px; height: 60px; }
+  nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--fg); }
+  nav .brand img { width: 28px; height: 28px; border-radius: 7px; }
+  nav .links { display: flex; gap: 18px; margin-left: auto; }
+  nav .links a { color: var(--muted); font-weight: 500; font-size: .95rem; }
+  nav .links a:hover { color: var(--fg); text-decoration: none; }
+  @media (max-width: 720px) { nav .links a:not(.btn) { display: none; } }
+
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 999px; font-weight: 600; border: 1px solid var(--border); color: var(--fg) !important; background: var(--card); transition: transform .12s ease, border-color .12s ease; }
+  .btn:hover { text-decoration: none !important; transform: translateY(-1px); border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff !important; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  nav .btn { padding: 7px 14px; font-size: .9rem; }
+
+  .hero { padding: 96px 0 72px; }
+  .hero .wrap { display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px; align-items: center; }
+  .hero .lead { font-size: 1.2rem; color: var(--muted); max-width: 46ch; }
+  .hero .ctas { display: flex; flex-wrap: wrap; gap: 12px; margin: 26px 0 14px; }
+  .hero .fine { font-size: .9rem; color: var(--muted); }
+  .hero .shot { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
+  .hero .shot img.flyout { width: 100%; max-width: 420px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 30px 80px -30px rgba(240, 78, 163, .35); display: block; }
+  .hero .shot img.tray { width: 200px; border-radius: 10px; border: 1px solid var(--border); box-shadow: 0 16px 40px -18px rgba(0,0,0,.6); margin-right: 220px; }
+  .kicker { display: inline-block; padding: 4px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: .85rem; margin-bottom: 18px; }
+  @media (max-width: 860px) { .hero .wrap { grid-template-columns: 1fr; } .hero .shot { align-items: center; } .hero .shot img.tray { margin-right: 0; } }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 34px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 22px 18px; }
+  .card .ico { width: 38px; height: 38px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; margin-bottom: 14px; font-family: "Fira Code", monospace; font-size: .95rem; }
+  .card p { color: var(--muted); margin: 0; font-size: .98rem; }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: center; padding: 38px 0; }
+  .row + .row { border-top: 1px dashed var(--border); }
+  .row img { width: 100%; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 24px 60px -30px rgba(0,0,0,.7); }
+  .row.flip .text { order: 2; }
+  .row .text p { color: var(--muted); }
+  .row .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .badge { font-family: "Fira Code", monospace; font-size: .8rem; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: var(--bg-2); }
+  .row.wide { grid-template-columns: 1fr; gap: 22px; }
+  .row.wide .text { max-width: 70ch; }
+  @media (max-width: 860px) { .row { grid-template-columns: 1fr; } .row.flip .text { order: 0; } }
+
+  .why { background: var(--bg-2); }
+  .why .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 10px; }
+  .why .cols p { color: var(--muted); }
+  @media (max-width: 860px) { .why .cols { grid-template-columns: 1fr; } }
+
+  ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 26px 0 0; display: grid; gap: 14px; }
+  ol.steps li { counter-increment: s; display: grid; grid-template-columns: 40px 1fr; gap: 14px; align-items: start; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  ol.steps li::before { content: counter(s); width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; }
+  ol.steps li p { margin: 0; color: var(--muted); }
+  ol.steps li strong { color: var(--fg); }
+
+  details { border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 4px 18px; margin-top: 10px; }
+  details summary { cursor: pointer; font-weight: 600; padding: 12px 0; list-style: none; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before { content: "+"; color: var(--accent); font-family: "Fira Code", monospace; margin-right: 12px; }
+  details[open] summary::before { content: "\2013"; }
+  details p { color: var(--muted); margin: 0 0 14px 24px; }
+
+  footer { border-top: 1px solid var(--border); padding: 36px 0; color: var(--muted); font-size: .95rem; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; }
+  footer .spacer { flex: 1; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#"><img src="icon.png" alt=""> WattBar</a>
+    <div class="links">
+      <a href="#features">Features</a>
+      <a href="#showcase">Showcase</a>
+      <a href="#why">Why</a>
+      <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/pmudry/wattbar">GitHub</a>
+      <a class="btn primary" href="https://github.com/pmudry/wattbar/releases/latest/download/WattBar.exe">Download</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <span class="kicker">Windows 11 · free · MIT</span>
+      <h1>Watts, not CPU load.</h1>
+      <p class="lead">WattBar puts your laptop's real battery drain in the tray, in watts, with a chart, the instantaneous CPU package power, and a view of which process is actually draining it.</p>
+      <div class="ctas">
+        <a class="btn primary" href="https://github.com/pmudry/wattbar/releases/latest/download/WattBar.exe">Download WattBar.exe</a>
+        <a class="btn" href="https://github.com/pmudry/wattbar">View on GitHub</a>
+      </div>
+      <p class="fine">Single 4 MB exe, no installer, no telemetry. Needs the .NET 10 Desktop Runtime.</p>
+    </div>
+    <div class="shot">
+      <img class="flyout" src="flyout.png" alt="WattBar chart flyout">
+      <img class="tray" src="tray.png" alt="WattBar tray icon">
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2>What it does</h2>
+    <p class="muted">Two numbers that disagree in useful ways, and the question that follows: which process?</p>
+    <div class="grid">
+      <div class="card"><div class="ico">W</div><h3>Watts in the tray</h3><p>Battery drain redrawn every second, with a two-minute sparkline of CPU package power behind the digits. On AC with an idle battery it shows the package power instead.</p></div>
+      <div class="card"><div class="ico">~</div><h3>Chart flyout</h3><p>Click the icon for the last 1 to 60 minutes of battery and package power, the average from the capacity drop, and the time left.</p></div>
+      <div class="card"><div class="ico">µ</div><h3>CPU package power</h3><p>The instantaneous figure from the RAPL counters, refreshed every second. The gap to the battery figure is the display and the rest of the machine.</p></div>
+      <div class="card"><div class="ico">?</div><h3>Who is using it</h3><p>Per-process energy shares behind Task Manager's Power usage column, with heavy background processes highlighted. Opt-in, and it explains the one thing that needs administrator rights.</p></div>
+      <div class="card"><div class="ico">⚡</div><h3>Power mode</h3><p>See and switch the Windows power mode for battery and for plugged in, right from the flyout. A plan that silently left Balanced gets a magenta warning.</p></div>
+      <div class="card"><div class="ico">⚙</div><h3>Small and quiet</h3><p>One 4 MB exe. Dark and light themes. English, French, German, Italian. Under 1 % of one core, including the collector.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="showcase">
+  <div class="wrap">
+    <h2>Showcase</h2>
+    <div class="row">
+      <div class="text">
+        <h3>The flyout</h3>
+        <p>The battery gauge in magenta is the truth over minutes: a slow rolling value with the whole machine in it. The package line in blue reacts within a second, so it tells you whether a change you just made did anything.</p>
+        <p>Averages come from the drop in remaining capacity, not from the mean of gauge samples. Standby shows as a gap, not a line.</p>
+        <div class="badges"><span class="badge">1–60 min</span><span class="badge">capacity-based average</span><span class="badge">time left</span><span class="badge">power mode</span><span class="badge">brightness</span></div>
+      </div>
+      <img src="flyout.png" alt="Flyout with battery and package power chart">
+    </div>
+    <div class="row wide">
+      <div class="text">
+        <h3>Who is using the battery</h3>
+        <p>Every minute Windows estimates how much energy each process caused. WattBar merges those estimates per process, adds the process state, spreads the measured package power across them, and highlights the background process that stays near the top.</p>
+        <p>Windows only lets administrators read that trace, so the window says why, and lets you choose a prompt each time, a scheduled task installed once, or nothing at all.</p>
+        <div class="badges"><span class="badge">Energy Estimation Engine</span><span class="badge">≈ CPU W</span><span class="badge">focus · visible · minimized · background</span></div>
+      </div>
+      <img src="offenders.png" alt="Per-process energy window">
+    </div>
+    <div class="row">
+      <div class="text">
+        <h3>In the tray, out of the way</h3>
+        <p>The digits keep one size and one decimal below 10 W. Behind them, a sparkline of the last two minutes. Click once for the chart, click again to close it. The gear opens theme, language, power mode, package readout rate and start with Windows.</p>
+      </div>
+      <div>
+        <img src="tray.png" alt="Tray icon" style="max-width: 280px; display: block; margin: 0 auto 18px;">
+        <img src="about.png" alt="About box" style="max-width: 360px; display: block; margin: 0 auto;">
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="why" class="why">
+  <div class="wrap">
+    <h2>Why</h2>
+    <div class="cols">
+      <div>
+        <p><strong>CPU load is not battery drain.</strong> Task Manager will happily show 2 % CPU while the laptop empties in three hours, because most of what costs energy never shows up as CPU time: the display backlight, a power scheme silently switched to High performance, a process holding the system timer at 1 ms so the CPU package can never go to deep idle, the GPU compositing a large high-refresh screen, Wi-Fi and SSD kept awake by a plan setting.</p>
+        <p>This tool came out of exactly that hunt: an idle drain of 9 to 15 W on a ThinkPad that ended at 2 to 3 W, with none of the culprits visible in the usual places.</p>
+      </div>
+      <div>
+        <p><strong>So WattBar shows watts</strong>, the unit the battery actually cares about, from two angles. The battery gauge is the truth over minutes. The CPU package power is instantaneous. The gap between the two is the display and the rest of the machine.</p>
+        <p>And because "which process" is the next question, the per-process view surfaces Windows' own energy accounting, ranked so that a heavy process running in the background stands out. The measurements behind these choices are written up in <a href="https://github.com/pmudry/wattbar/blob/main/docs/ENERGY-FINDINGS.md">the findings document</a>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="muted">Windows 10 build 19041 or later, x64. No installer: the exe is the app.</p>
+    <ol class="steps">
+      <li><div><strong>Get the runtime</strong>, once. WattBar needs the .NET Desktop Runtime 10 or newer. If it is missing, Windows offers the download when you start the exe, or run:<pre>winget install Microsoft.DotNet.DesktopRuntime.10</pre></div></li>
+      <li><div><strong>Download <a href="https://github.com/pmudry/wattbar/releases/latest/download/WattBar.exe">WattBar.exe</a></strong> and put it anywhere you like. Run it. It lives in the tray and promotes itself out of the overflow area.<p>Tick <em>Start with Windows</em> in the menu if you want it back after a reboot.</p></div></li>
+      <li><div><strong>Optional: the per-process view.</strong> Open <em>Who is using it</em> from the menu. Choose a UAC prompt each time, a scheduled task registered once with consent and started silently afterwards, or leave the feature off. Nothing else in WattBar needs administrator rights.</div></li>
+    </ol>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <h2>FAQ</h2>
+    <details><summary>Why does the tray number change only every 30 to 60 seconds?</summary><p>That is the battery gauge itself: the fuel-gauge chip reports a one-minute rolling average and refreshes it every 30 to 60 s. WattBar shows it raw rather than smoothing it further. The CPU package figure in the flyout is the one that reacts instantly.</p></details>
+    <details><summary>What does it show when I'm plugged in?</summary><p>With an idle battery there is no drain to report, so the tray and the flyout headline switch to the CPU package power, drawn in blue so the two are never confused.</p></details>
+    <details><summary>Are the per-process numbers watts?</summary><p>No. They are shares of Windows' own energy estimates, whose unit is undocumented. The ≈ CPU W column spreads the measured package power across processes by their CPU share, which is an estimate. Screen energy always goes to the window in front, so rank by CPU share to find the real offender.</p></details>
+    <details><summary>Where are the settings stored?</summary><p>Under <code>HKCU\Software\WattBar</code>. The collector writes its summaries to <code>%ProgramData%\WattBar</code>. Delete both and the exe, and WattBar is gone.</p></details>
+    <details><summary>Does it phone home?</summary><p>No. There is no network code in it. The download link on this page points at the GitHub release.</p></details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>WattBar · MIT License</span>
+    <a href="https://github.com/pmudry/wattbar">Source</a>
+    <a href="https://github.com/pmudry/wattbar/releases">Releases</a>
+    <a href="https://github.com/pmudry/wattbar/issues">Issues</a>
+    <span class="spacer"></span>
+    <span>Made with ♥ by mui, 2026</span>
+  </div>
+</footer>
+
+</body>
+</html>
