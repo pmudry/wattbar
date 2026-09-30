@@ -51,14 +51,24 @@ public sealed class TrayApp : ApplicationContext
 
         if (showFlyout) _flyout.ShowAtTray();
         if (showOffenders) ShowOffenders();
+
+        // Optional: keep the per-process collector running whenever WattBar runs. Only through the task,
+        // which starts without a prompt; the UAC route would nag at every launch.
+        if (Settings.CollectorAutoStart && E3Task.Mode == E3Mode.Task)
+            ThreadPool.QueueUserWorkItem(_ => { if (E3Task.IsInstalled()) E3Task.Run(); });
     }
+
+    private Sample? _lastBattery;
+    private const int BatteryEveryTicks = 5;
 
     private void Tick()
     {
         Sample sample;
         try
         {
-            sample = BatteryReader.Read();
+            // The gauge publishes a new value every 30-60 s; polling WMI every second only costs CPU.
+            if (_lastBattery is null || _ticks % BatteryEveryTicks == 0) _lastBattery = BatteryReader.Read();
+            sample = _lastBattery.Value with { Time = DateTime.Now };
         }
         catch (Exception ex)
         {

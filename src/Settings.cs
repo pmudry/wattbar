@@ -35,6 +35,21 @@ public static class Settings
 
     public static TimeSpan PackageWindow => TimeSpan.FromSeconds(PackageWindowSeconds);
 
+    /// <summary>Start the per-process collector together with the tray app (needs the scheduled task to avoid prompts).</summary>
+    public static bool CollectorAutoStart
+    {
+        get
+        {
+            try { using var key = Registry.CurrentUser.OpenSubKey(Key); return key?.GetValue("CollectorAutoStart") is int i && i == 1; }
+            catch { return false; }
+        }
+        set
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(Key);
+            key.SetValue("CollectorAutoStart", value ? 1 : 0, RegistryValueKind.DWord);
+        }
+    }
+
     /// <summary>Preferred Windows power mode for a source, or null when the user never chose one in WattBar.</summary>
     public static Guid? PreferredOverlay(bool onAc)
     {

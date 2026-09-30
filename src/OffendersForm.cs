@@ -20,6 +20,7 @@ public sealed class OffendersForm : Form
     private readonly RadioButton _modeAsk = new() { Text = T("Ask for administrator consent each time the collector starts (UAC prompt)"), AutoSize = true };
     private readonly RadioButton _modeTask = new() { Text = T("Install a scheduled task once (one prompt), then start it without prompts"), AutoSize = true };
     private readonly RadioButton _modeOff = new() { Text = T("Don\u2019t collect per-process data. Nothing else in WattBar needs administrator rights."), AutoSize = true };
+    private readonly CheckBox _autoStart = new() { Text = T("Start the collector together with WattBar (scheduled task, no prompt)"), AutoSize = true, Checked = Settings.CollectorAutoStart };
     private readonly Button _start = new() { AutoSize = true, Padding = new Padding(6, 2, 6, 2) };
     private readonly Button _stop = new() { Text = T("Stop collector"), AutoSize = true, Padding = new Padding(6, 2, 6, 2) };
     private readonly Button _removeTask = new() { Text = T("Remove scheduled task"), AutoSize = true, Padding = new Padding(6, 2, 6, 2) };
@@ -71,6 +72,8 @@ public sealed class OffendersForm : Form
         modes.Controls.Add(_modeAsk);
         modes.Controls.Add(_modeTask);
         modes.Controls.Add(_modeOff);
+        modes.Controls.Add(_autoStart);
+        _autoStart.CheckedChanged += (_, _) => Settings.CollectorAutoStart = _autoStart.Checked;
         switch (E3Task.Mode)
         {
             case E3Mode.Task: _modeTask.Checked = true; break;
@@ -214,6 +217,7 @@ public sealed class OffendersForm : Form
             _ => T("Start collector (UAC prompt)"),
         };
         _start.Enabled = mode != E3Mode.Off && !live && !_busy;
+        _autoStart.Enabled = mode == E3Mode.Task;
         _stop.Enabled = live;
         _removeTask.Visible = _taskInstalled;
         _removeTask.Enabled = !_busy;

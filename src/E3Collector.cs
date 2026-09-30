@@ -83,7 +83,10 @@ public static class E3Collector
             WriteSnapshot(new E3Snapshot { Status = "starting", Updated = DateTime.Now });
 
             using var session = new TraceEventSession(SessionName) { StopOnDispose = true };
-            session.EnableProvider(Provider, TraceEventLevel.Verbose, ulong.MaxValue);
+            // Keyword 0x4 (EnergyEstimation) carries the per-minute batch; the other keywords add thousands of
+            // CPU/frequency events a minute that we never read. Everything is still parsed by TraceEvent, so
+            // fewer events means less CPU for the collector itself.
+            session.EnableProvider(Provider, TraceEventLevel.Verbose, 0x4);
             session.Source.Dynamic.All += OnEvent;
             session.Source.UnhandledEvents += OnEvent;
             var pump = Task.Run(() => session.Source.Process());
@@ -93,10 +96,14 @@ public static class E3Collector
             // Started by the tray app: follow that process. Started by the scheduled task: stay while any
             // WattBar instance exists, with a grace period so a quick restart of the tray app does not end us.
             DateTime? noTraySince = null;
+            int loop = 0;
             while (true)
             {
                 Thread.Sleep(500);
                 if (pump.IsCompleted) { Log("event pump ended"); break; }
+                FlushIfIdle();
+                // Process enumeration is the expensive part of this loop; do it every 5 s, not every 500 ms.
+                if (++loop % 10 != 0) continue;
                 if (File.Exists(StopPath)) { Log("stop requested"); break; }
                 if (parentPid > 0 && !ProcessAlive(parentPid)) { Log("parent gone"); break; }
                 if (parentPid == 0)
@@ -105,7 +112,6 @@ public static class E3Collector
                     else if (noTraySince is null) noTraySince = DateTime.Now;
                     else if (DateTime.Now - noTraySince > TimeSpan.FromSeconds(10)) { Log("no WattBar instance left"); break; }
                 }
-                FlushIfIdle();
             }
 
             session.Dispose();
