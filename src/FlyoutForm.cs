@@ -21,6 +21,7 @@ public sealed class FlyoutForm : Form
     private readonly Action<Control, Point> _showSettings;
     private readonly Action<Control, Point> _showPowerMenu;
     private int _windowIndex = 1; // 5 minutes by default
+    private int _dpi = 96;
     private TimeSpan? _shownLeft;
 
     private const string PackageHelp =
@@ -73,7 +74,17 @@ public sealed class FlyoutForm : Form
     public void ShowAtTray()
     {
         _ = Handle;
-        float s = DeviceDpi / 96f;
+        _dpi = Dpi.ForPrimary();
+        PlaceNearTray();
+        Show();
+        Activate();
+        Invalidate();
+    }
+
+    /// <summary>Size and position from the live DPI of the primary monitor, where the tray lives.</summary>
+    private void PlaceNearTray()
+    {
+        float s = _dpi / 96f;
         Size = new Size((int)(BaseWidth * s), (int)(BaseHeight * s));
 
         var screen = Screen.PrimaryScreen ?? Screen.AllScreens[0];
@@ -82,9 +93,15 @@ public sealed class FlyoutForm : Form
         int x = wa.Right - Width - margin;
         int y = wa.Top > screen.Bounds.Top ? wa.Top + margin : wa.Bottom - Height - margin;
         Location = new Point(x, y);
+    }
 
-        Show();
-        Activate();
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        // Do our own layout from the new DPI instead of letting WinForms rescale the old size.
+        e.Cancel = true;
+        base.OnDpiChanged(e);
+        _dpi = e.DeviceDpiNew;
+        PlaceNearTray();
         Invalidate();
     }
 
@@ -175,7 +192,7 @@ public sealed class FlyoutForm : Form
         using (var pen = new Pen(border))
             g.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
 
-        float s = DeviceDpi / 96f;
+        float s = _dpi / 96f;
         float pad = 16 * s;
         var span = Windows[_windowIndex];
         var samples = _history.Since(span);
@@ -222,7 +239,8 @@ public sealed class FlyoutForm : Form
         var bigSize = g.MeasureString(big, fontBig);
         g.DrawString(StatusLine(last), fontSmall, brushMuted, pad + bigSize.Width + 4 * s, y + bigSize.Height - 22 * s);
 
-        // Context row: package power, scheme, brightness
+        // Context row: package power, power mode, brightness. When it does not fit the width (long
+        // translations, small DPI), the mode moves to a second line and the chart starts lower.
         float rowY = y + bigSize.Height + 2 * s;
         var segments = new List<(string text, Brush brush)>();
         if (pkgNow is double pw && !packageMode)
@@ -231,30 +249,48 @@ public sealed class FlyoutForm : Form
             string lbl = win > 1 ? T("package ({0} s avg) ", win) : T("package ");
             segments.Add((lbl, brushMuted));
             segments.Add(($"{pw:0.0} W", brushPackage));
-            float w = g.MeasureString($"{lbl}{pw:0.0} W", fontSmall).Width;
-            _hot.Add((new RectangleF(pad, rowY, w, fontSmall.GetHeight(g)), T(PackageHelp), null));
         }
-        int modeSegment = -1;
-        if (ctx is not null)
+        if (ctx?.Brightness is int b)
         {
             if (segments.Count > 0) segments.Add(("   \u00B7   ", brushMuted));
-            modeSegment = segments.Count;
-            segments.Add((ctx.Describe(), ctx.SchemeIsBalanced ? brushMuted : brushAccent));
-            if (ctx.Brightness is int b)
-            {
-                segments.Add(("   \u00B7   ", brushMuted));
-                segments.Add((T("brightness {0} %", b), brushMuted));
-            }
+            segments.Add((T("brightness {0} %", b), brushMuted));
         }
-        var segRects = DrawSegments(g, pad, rowY, fontSmall, segments);
-        if (modeSegment >= 0)
+        var modeSeg = ctx is null ? ((string, Brush)?)null : (ctx.Describe(), ctx.SchemeIsBalanced ? brushMuted : brushAccent);
+
+        float lineH = fontSmall.GetHeight(g);
+        float available = Width - 2 * pad;
+        float Measure(List<(string text, Brush brush)> list) => list.Sum(t => g.MeasureString(t.text, fontSmall, PointF.Empty, StringFormat.GenericTypographic).Width);
+        bool twoLines = false;
+        if (modeSeg is { } m)
         {
-            var mr = segRects[modeSegment];
-            _hot.Add((mr, T("Power mode: click to change it for battery and plugged in"), () => _showPowerMenu(this, new Point((int)mr.Left, (int)mr.Bottom))));
+            var oneLine = new List<(string, Brush)>(segments);
+            if (oneLine.Count > 0) oneLine.Add(("   \u00B7   ", brushMuted));
+            oneLine.Add(m);
+            if (Measure(oneLine) <= available) segments = oneLine;
+            else twoLines = true;
         }
 
+        var segRects = DrawSegments(g, pad, rowY, fontSmall, segments);
+        int modeIndex = twoLines ? -1 : segments.Count - 1;
+        RectangleF modeRect = RectangleF.Empty;
+        if (modeSeg is { } m2)
+        {
+            if (twoLines)
+            {
+                var r2 = DrawSegments(g, pad, rowY + lineH + 2 * s, fontSmall, [m2]);
+                modeRect = r2[0];
+            }
+            else
+            {
+                modeRect = segRects[modeIndex];
+            }
+            _hot.Add((modeRect, T("Power mode: click to change it for battery and plugged in"), () => _showPowerMenu(this, new Point((int)modeRect.Left, (int)modeRect.Bottom))));
+        }
+        if (pkgNow is not null && !packageMode && segRects.Count >= 2)
+            _hot.Add((new RectangleF(segRects[0].Left, rowY, segRects[1].Right - segRects[0].Left, lineH), T(PackageHelp), null));
+
+        float chartTop = rowY + 26 * s + (twoLines ? lineH + 2 * s : 0);
         // Chart
-        float chartTop = rowY + 26 * s;
         float chartBottom = Height - pad - 40 * s;
         var chart = new RectangleF(pad, chartTop, Width - 2 * pad, chartBottom - chartTop);
         string yMaxLabel = DrawChart(g, chart, samples, span, accent, packageLine, grid, muted, fontSmall, s);

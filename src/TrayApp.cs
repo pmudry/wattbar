@@ -83,7 +83,8 @@ public sealed class TrayApp : ApplicationContext
 
         // The gauge is already a one-minute rolling average that steps every 30-60 s, so the digits
         // show it raw. The sparkline prefers package power, the only instantaneous signal.
-        int size = SystemInformation.SmallIconSize.Width;
+        // The tray sits on the primary monitor; its DPI decides the icon size (16 px at 100 %).
+        int size = Math.Max(16, (int)Math.Round(16 * Dpi.ForPrimary() / 96.0));
         int bins = Math.Max(8, size / 2);
         var spark = _package.Available
             ? _history.Bins(SparkSpan, bins, x => x.PackageWatts)
@@ -317,6 +318,12 @@ public sealed class TrayApp : ApplicationContext
 
     private void ShowOffenders()
     {
+        // A window laid out for another DPI (docked vs undocked) is rebuilt rather than rescaled.
+        if (_offenders is not null && !_offenders.Visible && _offenders.DeviceDpi != Dpi.ForPrimary())
+        {
+            _offenders.Dispose();
+            _offenders = null;
+        }
         _offenders ??= new OffendersForm(() => _history.PackageAverage(TimeSpan.FromMinutes(1)));
         _offenders.Show();
         _offenders.WindowState = FormWindowState.Normal;
