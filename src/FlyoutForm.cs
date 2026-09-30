@@ -136,6 +136,20 @@ public sealed class FlyoutForm : Form
         Invalidate();
     }
 
+    private void ShowWindowMenu(Point at)
+    {
+        var menu = new ContextMenuStrip();
+        for (int i = 0; i < Windows.Length; i++)
+        {
+            int index = i;
+            var item = new ToolStripMenuItem($"last {(int)Windows[i].TotalMinutes} min") { Checked = i == _windowIndex };
+            item.Click += (_, _) => { _windowIndex = index; Invalidate(); };
+            menu.Items.Add(item);
+        }
+        menu.Closed += (_, _) => menu.Dispose();
+        menu.Show(this, at);
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
@@ -180,7 +194,8 @@ public sealed class FlyoutForm : Form
         var wl = g.MeasureString(windowLabel, fontSmall);
         float hx = Width - pad - wl.Width;
         g.DrawString(windowLabel, fontSmall, brushMuted, hx, pad);
-        _hot.Add((new RectangleF(hx, pad, wl.Width, wl.Height), "Time window: click to cycle 1, 5, 10, 30, 60 min", CycleWindow));
+        float labelX = hx, labelBottom = pad + wl.Height;
+        _hot.Add((new RectangleF(hx, pad, wl.Width, wl.Height), "Time window", () => ShowWindowMenu(new Point((int)labelX, (int)labelBottom))));
 
         float gearW = DrawGlyphButton(g, "\uE713", hx - 10 * s, pad, wl.Height, muted, s);
         hx -= 10 * s + gearW;
