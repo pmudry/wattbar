@@ -34,4 +34,21 @@ public static class Settings
     }
 
     public static TimeSpan PackageWindow => TimeSpan.FromSeconds(PackageWindowSeconds);
+
+    /// <summary>Preferred Windows power mode for a source, or null when the user never chose one in WattBar.</summary>
+    public static Guid? PreferredOverlay(bool onAc)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(Key);
+            return key?.GetValue(onAc ? "ModeAc" : "ModeDc") is string s && Guid.TryParse(s, out var g) ? g : null;
+        }
+        catch { return null; }
+    }
+
+    public static void SetPreferredOverlay(bool onAc, Guid overlay)
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(Key);
+        key.SetValue(onAc ? "ModeAc" : "ModeDc", overlay.ToString());
+    }
 }

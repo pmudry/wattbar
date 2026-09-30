@@ -19,6 +19,7 @@ public sealed class FlyoutForm : Form
     private readonly Func<PowerContext?> _context;
     private readonly Action _showOffenders;
     private readonly Action<Control, Point> _showSettings;
+    private readonly Action<Control, Point> _showPowerMenu;
     private int _windowIndex = 1; // 5 minutes by default
     private TimeSpan? _shownLeft;
 
@@ -31,12 +32,13 @@ public sealed class FlyoutForm : Form
     private readonly List<(RectangleF rect, string? tip, Action? click)> _hot = [];
     private int _tipRegion = -1;
 
-    public FlyoutForm(History history, Func<PowerContext?> context, Action showOffenders, Action<Control, Point> showSettings)
+    public FlyoutForm(History history, Func<PowerContext?> context, Action showOffenders, Action<Control, Point> showSettings, Action<Control, Point> showPowerMenu)
     {
         _history = history;
         _context = context;
         _showOffenders = showOffenders;
         _showSettings = showSettings;
+        _showPowerMenu = showPowerMenu;
 
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
@@ -232,9 +234,11 @@ public sealed class FlyoutForm : Form
             float w = g.MeasureString($"{lbl}{pw:0.0} W", fontSmall).Width;
             _hot.Add((new RectangleF(pad, rowY, w, fontSmall.GetHeight(g)), T(PackageHelp), null));
         }
+        int modeSegment = -1;
         if (ctx is not null)
         {
             if (segments.Count > 0) segments.Add(("   \u00B7   ", brushMuted));
+            modeSegment = segments.Count;
             segments.Add((ctx.Describe(), ctx.SchemeIsBalanced ? brushMuted : brushAccent));
             if (ctx.Brightness is int b)
             {
@@ -242,7 +246,12 @@ public sealed class FlyoutForm : Form
                 segments.Add((T("brightness {0} %", b), brushMuted));
             }
         }
-        DrawSegments(g, pad, rowY, fontSmall, segments);
+        var segRects = DrawSegments(g, pad, rowY, fontSmall, segments);
+        if (modeSegment >= 0)
+        {
+            var mr = segRects[modeSegment];
+            _hot.Add((mr, T("Power mode: click to change it for battery and plugged in"), () => _showPowerMenu(this, new Point((int)mr.Left, (int)mr.Bottom))));
+        }
 
         // Chart
         float chartTop = rowY + 26 * s;
@@ -316,15 +325,19 @@ public sealed class FlyoutForm : Form
         return w;
     }
 
-    private static void DrawSegments(Graphics g, float x, float y, Font font, List<(string text, Brush brush)> segments)
+    private static List<RectangleF> DrawSegments(Graphics g, float x, float y, Font font, List<(string text, Brush brush)> segments)
     {
         using var fmt = (StringFormat)StringFormat.GenericTypographic.Clone();
         fmt.FormatFlags |= StringFormatFlags.MeasureTrailingSpaces;
+        var rects = new List<RectangleF>();
         foreach (var (text, brush) in segments)
         {
             g.DrawString(text, font, brush, x, y, fmt);
-            x += g.MeasureString(text, font, PointF.Empty, fmt).Width;
+            var sz = g.MeasureString(text, font, PointF.Empty, fmt);
+            rects.Add(new RectangleF(x, y, sz.Width, sz.Height));
+            x += sz.Width;
         }
+        return rects;
     }
 
     private static float LegendWidth(Graphics g, Font font, string label, float s) =>

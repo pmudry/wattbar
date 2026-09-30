@@ -15,6 +15,7 @@ public sealed class TrayApp : ApplicationContext
     private readonly FlyoutForm _flyout;
     private readonly ToolStripMenuItem _startupItem;
     private PowerContext? _context;
+    private bool? _lastOnAc;
     private OffendersForm? _offenders;
     private int _ticks;
     private int _pinAttempts;
@@ -25,7 +26,7 @@ public sealed class TrayApp : ApplicationContext
 
     public TrayApp(bool showFlyout = false, bool showOffenders = false)
     {
-        _flyout = new FlyoutForm(_history, () => _context, ShowOffenders, ShowSettingsMenu);
+        _flyout = new FlyoutForm(_history, () => _context, ShowOffenders, ShowSettingsMenu, ShowPowerMenu);
 
         _startupItem = new ToolStripMenuItem(T("Start with Windows"), null, (_, _) => ToggleStartup()) { Checked = Startup.IsEnabled() };
 
@@ -68,11 +69,7 @@ public sealed class TrayApp : ApplicationContext
         sample = sample with { PackageWatts = _package.Read() };
         _history.Add(sample);
 
-        if (_ticks++ % ContextEveryTicks == 0)
-        {
-            try { _context = PowerContext.Read(); }
-            catch { _context = null; }
-        }
+        if (_ticks++ % ContextEveryTicks == 0) RefreshContext();
 
         // The gauge is already a one-minute rolling average that steps every 30-60 s, so the digits
         // show it raw. The sparkline prefers package power, the only instantaneous signal.
@@ -126,6 +123,80 @@ public sealed class TrayApp : ApplicationContext
         _flyout.ShowAtTray();
     }
 
+    private void RefreshContext()
+    {
+        try { _context = PowerContext.Read(); }
+        catch { _context = null; return; }
+
+        // Plugged or unplugged: apply the mode the user chose for that source in WattBar, if any.
+        if (_context.OnAc != _lastOnAc)
+        {
+            _lastOnAc = _context.OnAc;
+            ApplyPreferredMode();
+        }
+    }
+
+    private void ApplyPreferredMode()
+    {
+        if (_context is not { SchemeIsBalanced: true } ctx) return;
+        if (Settings.PreferredOverlay(ctx.OnAc) is Guid wanted && wanted != ctx.CurrentOverlay && PowerContext.SetOverlay(wanted))
+        {
+            try { _context = PowerContext.Read(); } catch { }
+        }
+    }
+
+    private void ChooseMode(bool onAc, Guid overlay)
+    {
+        Settings.SetPreferredOverlay(onAc, overlay);
+        if (_context?.OnAc == onAc) PowerContext.SetOverlay(overlay);
+        RefreshContext();
+        _flyout.Invalidate();
+        RebuildMenu();
+    }
+
+    private void BackToBalancedPlan()
+    {
+        PowerContext.SetScheme(PowerContext.BalancedScheme);
+        RefreshContext();
+        ApplyPreferredMode();
+        _flyout.Invalidate();
+        RebuildMenu();
+    }
+
+    /// <summary>Fills a menu with the power-mode choices for both sources, or the plan warning.</summary>
+    private void AddPowerModeItems(ToolStripItemCollection items)
+    {
+        var ctx = _context;
+        if (ctx is { SchemeIsBalanced: false })
+        {
+            items.Add(new ToolStripMenuItem(T("Plan is {0}, power modes are off", T(ctx.Scheme))) { Enabled = false });
+            items.Add(new ToolStripMenuItem(T("Back to the Balanced plan"), null, (_, _) => BackToBalancedPlan()));
+            return;
+        }
+        foreach (bool onAc in new[] { false, true })
+        {
+            items.Add(new ToolStripMenuItem(T(onAc ? "Plugged in" : "On battery")) { Enabled = false, Font = new Font(SystemFonts.MenuFont!, FontStyle.Bold) });
+            Guid current = ctx is null ? Guid.Empty : onAc ? ctx.OverlayAc : ctx.OverlayDc;
+            foreach (var (guid, name) in PowerContext.Overlays)
+            {
+                var g = guid;
+                var item = new ToolStripMenuItem("    " + T(name)) { Checked = current == g };
+                item.Click += (_, _) => ChooseMode(onAc, g);
+                items.Add(item);
+            }
+        }
+    }
+
+    private ContextMenuStrip? _powerMenu;
+
+    private void ShowPowerMenu(Control owner, Point at)
+    {
+        _powerMenu?.Dispose();
+        _powerMenu = new ContextMenuStrip();
+        AddPowerModeItems(_powerMenu.Items);
+        _powerMenu.Show(owner, at);
+    }
+
     private ContextMenuStrip? _settingsMenu;
 
     private void ShowSettingsMenu(Control owner, Point at)
@@ -162,6 +233,10 @@ public sealed class TrayApp : ApplicationContext
             language.DropDownItems.Add(item);
         }
         menu.Items.Add(language);
+
+        var power = new ToolStripMenuItem(T("Power mode"));
+        AddPowerModeItems(power.DropDownItems);
+        menu.Items.Add(power);
 
         var readout = new ToolStripMenuItem(T("Package readout"));
         foreach (int secs in Settings.PackageWindows)

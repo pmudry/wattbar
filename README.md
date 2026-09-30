@@ -31,7 +31,8 @@ So WattBar shows watts, the unit the battery actually cares about, and shows it 
 ## Features
 
 - **Watts in the tray** — battery drain, redrawn every second, with a two-minute sparkline of CPU package power behind the digits. On AC with an idle battery it shows the package power instead
-- **Chart flyout** — click the icon for the last 1 to 60 minutes of battery and package power, the average and time left, the active power scheme and brightness
+- **Chart flyout** — click the icon for the last 1 to 60 minutes of battery and package power, the average and time left, the Windows power mode and brightness
+- **Power mode** — see and switch the Windows 11 power mode (best efficiency, balanced, best performance) for battery and for plugged in from the flyout; WattBar re-applies your choice when you plug or unplug, and warns if the plan is no longer Balanced
 - **Who is using it** — per-process energy shares behind Task Manager's "Power usage" column, with heavy background processes highlighted
 - **Settings** — theme, language (English, French, German, Italian, following Windows by default), package readout rate, start with Windows, from the gear in the flyout or the tray menu
 - **Self-pinning** — promotes itself out of the tray overflow so it stays visible
@@ -56,7 +57,7 @@ Right-click the icon for **Show chart**, **Who is using it…**, **Theme**, **La
 
 **Averages and time left.** For any window that holds at least four minutes of continuous discharge, the average is the drop in remaining capacity divided by the elapsed time. Until then the flyout falls back to the mean of gauge samples and marks it with an asterisk. The time-left estimate uses the same capacity-based average over ten minutes, rounded to ten-minute steps with hysteresis.
 
-**Context.** The active scheme comes from `PowerGetActiveScheme`, the Windows 11 overlay from the `PowerSchemes` registry key, and brightness from the WMI class `WmiMonitorBrightness`. All three are read without elevation every five seconds.
+**Context.** The active plan comes from `PowerGetActiveScheme`, the Windows 11 power mode for the current source from `PowerGetEffectiveOverlayScheme` and for the other source from the `PowerSchemes` registry key, and brightness from the WMI class `WmiMonitorBrightness`. All are read without elevation every five seconds. Switching uses `PowerSetActiveOverlayScheme` and `PowerSetActiveScheme`, which also work unelevated; the mode for the source you are not on is applied when the source changes.
 
 **Per-process estimates.** Task Manager's "Power usage" column comes from the Energy Estimation Engine, which also publishes its per-minute estimates as the ETW provider `Microsoft-Windows-Energy-Estimation-Engine`. Reading it needs an elevated process, so the "Who is using it" window starts a second copy of WattBar as a collector, and explains why. You choose how it may start: with a UAC prompt each time, through a scheduled task registered once with consent and started silently afterwards, or not at all. The collector merges each batch per process and writes `%ProgramData%\WattBar\e3.json`, which the tray app displays; it exits with the tray app or on demand. The unit of those estimates is undocumented, so the window shows shares, plus an approximate CPU wattage obtained by spreading the measured package power over processes by their CPU share. Each row carries the process state for the minute (focus, visible, minimized, background); a background or minimized process above 10 % of CPU share is highlighted in magenta as a likely offender. Screen energy is always charged to the foreground window.
 

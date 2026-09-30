@@ -1,13 +1,29 @@
 using System.Management;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using static WattBar.L10n;
 
 namespace WattBar;
 
-/// <summary>Cheap context that explains a reading: active power scheme, Windows 11 power-mode overlay, panel brightness, AC.</summary>
-public sealed record PowerContext(string Scheme, bool SchemeIsBalanced, string? Overlay, int? Brightness, bool OnAc)
+/// <summary>
+/// Cheap context that explains a reading: the classic power plan, the Windows 11 power mode (overlay) for
+/// battery and for plugged in, panel brightness, AC. Also switches plan and mode; both calls work unelevated.
+/// </summary>
+public sealed record PowerContext(string Scheme, bool SchemeIsBalanced, Guid OverlayAc, Guid OverlayDc, int? Brightness, bool OnAc)
 {
-    private static readonly Guid BalancedScheme = new("381b4222-f694-41f0-9685-ff5bb260df2e");
+    public static readonly Guid BalancedScheme = new("381b4222-f694-41f0-9685-ff5bb260df2e");
+
+    public static readonly Guid OverlayBalanced = Guid.Empty;
+    public static readonly Guid OverlayEfficiency = new("961cc777-2547-4f9d-8174-7d86181b8a7a");
+    public static readonly Guid OverlayPerformance = new("ded574b5-45a0-4f42-8737-46345c09c238");
+
+    /// <summary>Power modes in the order Settings shows them; names are translation keys.</summary>
+    public static readonly (Guid guid, string name)[] Overlays =
+    [
+        (OverlayEfficiency, "Best efficiency"),
+        (OverlayBalanced, "Balanced"),
+        (OverlayPerformance, "Best performance"),
+    ];
 
     private static readonly Dictionary<Guid, string> SchemeNames = new()
     {
@@ -17,23 +33,45 @@ public sealed record PowerContext(string Scheme, bool SchemeIsBalanced, string? 
         [new Guid("e9a42b02-d5df-448d-aa00-03f14749eb61")] = "Ultimate performance",
     };
 
-    private static readonly Dictionary<Guid, string> OverlayNames = new()
+    public Guid CurrentOverlay => OnAc ? OverlayAc : OverlayDc;
+
+    public static string OverlayName(Guid g)
     {
-        [Guid.Empty] = "balanced",
-        [new Guid("961cc777-2547-4f9d-8174-7d86181b8a7a")] = "best efficiency",
-        [new Guid("ded574b5-45a0-4f42-8737-46345c09c238")] = "best performance",
-    };
+        foreach (var (guid, name) in Overlays) if (guid == g) return name;
+        return "Balanced";
+    }
 
     public static PowerContext Read()
     {
         bool onAc = SystemInformation.PowerStatus.PowerLineStatus == PowerLineStatus.Online;
         var (scheme, balanced) = ReadScheme();
-        return new PowerContext(scheme, balanced, ReadOverlay(onAc), ReadBrightness(), onAc);
+        var (ac, dc) = ReadOverlays();
+        // The live value for the current source beats the registry copy.
+        if (PowerGetEffectiveOverlayScheme(out var eff) == 0)
+        {
+            if (onAc) ac = eff; else dc = eff;
+        }
+        return new PowerContext(scheme, balanced, ac, dc, ReadBrightness(), onAc);
     }
 
-    /// <summary>"Balanced · best efficiency", "High performance", ...</summary>
-    public string Describe() =>
-        SchemeIsBalanced && Overlay is string o && o != "balanced" ? $"{L10n.T(Scheme)} \u00B7 {L10n.T(o)}" : L10n.T(Scheme);
+    /// <summary>"Mode: best performance (plugged in)", or a warning when the plan is not Balanced and modes are off.</summary>
+    public string Describe() => SchemeIsBalanced
+        ? T("Mode: {0} ({1})", T(OverlayName(CurrentOverlay)).ToLowerInvariant(), T(OnAc ? "plugged in" : "on battery"))
+        : T("Plan is {0}, power modes are off", T(Scheme));
+
+    /// <summary>Sets the power mode for the current source, as Settings does.</summary>
+    public static bool SetOverlay(Guid overlay)
+    {
+        try { return PowerSetActiveOverlayScheme(overlay) == 0; }
+        catch { return false; }
+    }
+
+    /// <summary>Sets the classic power plan.</summary>
+    public static bool SetScheme(Guid scheme)
+    {
+        try { return PowerSetActiveScheme(IntPtr.Zero, ref scheme) == 0; }
+        catch { return false; }
+    }
 
     private static (string name, bool balanced) ReadScheme()
     {
@@ -67,17 +105,17 @@ public sealed record PowerContext(string Scheme, bool SchemeIsBalanced, string? 
         return System.Text.Encoding.Unicode.GetString(buf).TrimEnd('\0');
     }
 
-    private static string? ReadOverlay(bool onAc)
+    private static (Guid ac, Guid dc) ReadOverlays()
     {
         try
         {
             using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes");
-            if (key?.GetValue(onAc ? "ActiveOverlayAcPowerScheme" : "ActiveOverlayDcPowerScheme") is not string s) return null;
-            return Guid.TryParse(s, out var g) && OverlayNames.TryGetValue(g, out var name) ? name : null;
+            Guid Parse(string name) => key?.GetValue(name) is string s && Guid.TryParse(s, out var g) ? g : Guid.Empty;
+            return (Parse("ActiveOverlayAcPowerScheme"), Parse("ActiveOverlayDcPowerScheme"));
         }
         catch
         {
-            return null;
+            return (Guid.Empty, Guid.Empty);
         }
     }
 
@@ -100,5 +138,14 @@ public sealed record PowerContext(string Scheme, bool SchemeIsBalanced, string? 
     private static extern uint PowerGetActiveScheme(IntPtr userRootPowerKey, out IntPtr activePolicyGuid);
 
     [DllImport("powrprof.dll")]
+    private static extern uint PowerSetActiveScheme(IntPtr userRootPowerKey, ref Guid schemeGuid);
+
+    [DllImport("powrprof.dll")]
     private static extern uint PowerReadFriendlyName(IntPtr rootPowerKey, ref Guid schemeGuid, IntPtr subGroup, IntPtr powerSetting, byte[]? buffer, ref uint bufferSize);
+
+    [DllImport("powrprof.dll")]
+    private static extern uint PowerGetEffectiveOverlayScheme(out Guid overlay);
+
+    [DllImport("powrprof.dll")]
+    private static extern uint PowerSetActiveOverlayScheme(Guid overlay);
 }
