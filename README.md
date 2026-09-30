@@ -23,18 +23,11 @@ A tiny Windows 11 tray app that shows how fast your laptop battery is draining, 
 
 ## Features
 
-- **Watts in the tray** — the icon is redrawn every second with the battery gauge reading; below 10 W it keeps one decimal. On AC with an idle battery it shows the CPU package power instead, in the package colour
-- **Sparkline in the icon** — the last two minutes of CPU package power, the only instantaneous signal, binned to the icon width
-- **Chart flyout** — click the icon for a plot of the last 1, 5, 10, 30 or 60 minutes with the battery gauge and the package power as two series; click the chart to cycle the window. The header holds a "Who is using it" button and a settings gear
-- **Honest averages** — for windows with enough continuous discharge, the average and the time left come from the drop in remaining capacity, not from the mean of gauge samples
-- **Package readout** — raw every second, or refreshed every 5, 10 or 30 s with the average of the last block, chosen from the settings menu
-- **Theme** — follow Windows, or force dark or light, from the settings menu or the tray menu
-- **Context row** — package watts (hover for what that covers), active power scheme and Windows 11 power-mode overlay, panel brightness; the scheme turns magenta when it is not Balanced
-- **Theme aware** — digits invert on a light taskbar, flyout follows the app light/dark setting, rounded corners via DWM
-- **ISC colours** — magenta while discharging, teal while charging, blue for the package series
-- **Who is using it** — an opt-in window ranking processes by their share of Windows' own per-minute energy estimates, fed by a small elevated collector
+- **Watts in the tray** — battery drain, redrawn every second, with a two-minute sparkline of CPU package power behind the digits. On AC with an idle battery it shows the package power instead
+- **Chart flyout** — click the icon for the last 1 to 60 minutes of battery and package power, the average and time left, the active power scheme and brightness
+- **Who is using it** — per-process energy shares behind Task Manager's "Power usage" column, with heavy background processes highlighted
+- **Settings** — theme, package readout rate, start with Windows, from the gear in the flyout or the tray menu
 - **Self-pinning** — promotes itself out of the tray overflow so it stays visible
-- **Start with Windows** — toggle from the right-click menu, backed by the per-user Run key
 
 ## Quick Start
 
