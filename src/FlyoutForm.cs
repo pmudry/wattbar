@@ -351,32 +351,60 @@ public sealed class FlyoutForm : Form
         float X(Sample smp) => (float)(r.Left + Math.Clamp(1.0 - (now - smp.Time).Ticks / (double)span.Ticks, 0, 1) * r.Width);
         float Y(double w) => (float)(r.Bottom - Math.Min(w, yMax) / yMax * r.Height);
 
-        // Battery gauge: filled area + line
-        var pts = samples.Select(x => new PointF(X(x), Y(Math.Abs(x.Watts)))).ToArray();
-        using (var area = new GraphicsPath())
+        // Battery gauge: filled area + line, broken wherever samples are missing (standby, hibernation)
+        using var fill = new LinearGradientBrush(r, Color.FromArgb(110, accent), Color.FromArgb(10, accent), LinearGradientMode.Vertical);
+        using var line = new Pen(accent, 2 * s) { LineJoin = LineJoin.Round };
+        using var dot = new SolidBrush(accent);
+        float rad = 3 * s;
+        foreach (var seg in Segments(samples.Select(x => (new PointF(X(x), Y(Math.Abs(x.Watts))), x.Time))))
         {
-            area.AddLine(pts[0].X, r.Bottom, pts[0].X, pts[0].Y);
-            area.AddLines(pts);
-            area.AddLine(pts[^1].X, pts[^1].Y, pts[^1].X, r.Bottom);
-            area.CloseFigure();
-            using var fill = new LinearGradientBrush(r, Color.FromArgb(110, accent), Color.FromArgb(10, accent), LinearGradientMode.Vertical);
-            g.FillPath(fill, area);
+            if (seg.Length >= 2)
+            {
+                using var area = new GraphicsPath();
+                area.AddLine(seg[0].X, r.Bottom, seg[0].X, seg[0].Y);
+                area.AddLines(seg);
+                area.AddLine(seg[^1].X, seg[^1].Y, seg[^1].X, r.Bottom);
+                area.CloseFigure();
+                g.FillPath(fill, area);
+                g.DrawLines(line, seg);
+            }
+            else
+            {
+                g.FillEllipse(dot, seg[0].X - rad / 2, seg[0].Y - rad / 2, rad, rad);
+            }
         }
-        using (var line = new Pen(accent, 2 * s) { LineJoin = LineJoin.Round })
-            g.DrawLines(line, pts);
-        using (var dot = new SolidBrush(accent))
-        {
-            float rad = 3 * s;
-            g.FillEllipse(dot, pts[^1].X - rad, pts[^1].Y - rad, 2 * rad, 2 * rad);
-        }
+        var lastPt = new PointF(X(samples[^1]), Y(Math.Abs(samples[^1].Watts)));
+        g.FillEllipse(dot, lastPt.X - rad, lastPt.Y - rad, 2 * rad, 2 * rad);
 
-        // Package power: thin line, only where present
-        var ppts = samples.Select((x, i) => (x, v: smoothed[i])).Where(t => t.v is not null).Select(t => new PointF(X(t.x), Y(t.v!.Value))).ToArray();
-        if (ppts.Length >= 2)
+        // Package power: thin line, only where present, with the same gap rule
+        using var pline = new Pen(package, 1.5f * s) { LineJoin = LineJoin.Round };
+        using var pdot = new SolidBrush(package);
+        var ppts = samples.Select((x, i) => (x, v: smoothed[i])).Where(t => t.v is not null).Select(t => (new PointF(X(t.x), Y(t.v!.Value)), t.x.Time));
+        foreach (var seg in Segments(ppts))
         {
-            using var pline = new Pen(package, 1.5f * s) { LineJoin = LineJoin.Round };
-            g.DrawLines(pline, ppts);
+            if (seg.Length >= 2) g.DrawLines(pline, seg);
+            else g.FillEllipse(pdot, seg[0].X - rad / 2, seg[0].Y - rad / 2, rad, rad);
         }
+    }
+
+    /// <summary>Samples arrive once a second; a longer silence means the machine was asleep, so the line breaks there.</summary>
+    private static readonly TimeSpan MaxGap = TimeSpan.FromSeconds(5);
+
+    private static IEnumerable<PointF[]> Segments(IEnumerable<(PointF p, DateTime t)> points)
+    {
+        var seg = new List<PointF>();
+        DateTime? prev = null;
+        foreach (var (p, t) in points)
+        {
+            if (prev is DateTime pt && t - pt > MaxGap && seg.Count > 0)
+            {
+                yield return seg.ToArray();
+                seg.Clear();
+            }
+            seg.Add(p);
+            prev = t;
+        }
+        if (seg.Count > 0) yield return seg.ToArray();
     }
 
     private string StatusLine(Sample? last)

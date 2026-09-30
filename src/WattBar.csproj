@@ -9,7 +9,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>WattBar</AssemblyName>
     <RootNamespace>WattBar</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- publish as a single framework-dependent exe (needs the .NET 10 desktop runtime) -->
